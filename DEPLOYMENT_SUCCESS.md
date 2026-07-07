@@ -224,7 +224,7 @@ Updated all 5 route handlers in education.ts:
 - **Spring Orchestrator:** http://localhost:8080
 
 ### Database
-- **MongoDB:** mongodb://localhost:27017
+- **MongoDB:** configured via `MONGODB_URI`
 - **Database Name:** perbillion
 - **Collections:** users, lessons, education_progress
 
