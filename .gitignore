@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+!services/frontend/src/lib/
+!services/frontend/src/lib/**
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment
+.env
+.env.*
+!.env.example
+!**/.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+services/spring-orchestrator/src/main/resources/application-local.properties
+services/spring-orchestrator/src/main/resources/application-*.local.properties
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+*.coverage
+.pytest_cache/
+
+# Build outputs
+target/
+*.jar
+*.war
+*.class
+
+# Database
+*.db
+*.sqlite
+
+# Secrets
+*.pem
+*.key
+secrets/
+
+# Java
+.gradle/
+.mvn/
+mvnw
+mvnw.cmd
+
+# Docker
+.dockerignore
+
+# Uploads (except .gitkeep)
+services/api-gateway/uploads/*
+!services/api-gateway/uploads/profiles/.gitkeep

@@ -1,0 +1,32 @@
+# Spring Boot Configuration
+spring.application.name=perbillion-orchestrator
+
+# Server Configuration
+server.port=8080
+
+# MongoDB Configuration - Required from environment
+spring.data.mongodb.uri=${MONGODB_URI}
+
+# ML Engine Configuration
+ml.engine.url=${ML_ENGINE_URL:http://localhost:5001}
+
+# Alpha Vantage API Configuration - Required from environment
+alphavantage.api.key=${ALPHAVANTAGE_API_KEY}
+
+# Actuator Configuration
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=always
+
+# OpenAPI/Swagger Configuration
+springdoc.api-docs.path=/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.operationsSorter=method
+springdoc.swagger-ui.enabled=true
+
+# Logging
+logging.level.root=INFO
+logging.level.com.perbillion=DEBUG
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %msg%n
+
+# Spring WebClient Configuration
+spring.codec.max-in-memory-size=10MB

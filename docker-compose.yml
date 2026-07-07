@@ -1,0 +1,160 @@
+services:
+  # MongoDB - Application data storage
+  mongodb:
+    image: mongo:7
+    container_name: perbillion-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: perbillion
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD is required}
+      MONGO_INITDB_DATABASE: perbillion
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
+    networks:
+      - perbillion-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Python ML Engine
+  ml-engine:
+    build:
+      context: ./services/ml-engine
+      dockerfile: Dockerfile
+    container_name: perbillion-ml-engine
+    ports:
+      - "5001:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./services/ml-engine:/app
+      - ml_cache:/app/cache
+    networks:
+      - perbillion-network
+    depends_on:
+      - mongodb
+
+  # Spring Boot Orchestration Layer
+  spring-orchestrator:
+    build:
+      context: ./services/spring-orchestrator
+      dockerfile: Dockerfile
+    container_name: perbillion-spring-orchestrator
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - MONGODB_URI=${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/perbillion?authSource=admin}
+      - SPRING_DATA_MONGODB_URI=${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/perbillion?authSource=admin}
+      - MONGODB_HOST=mongodb
+      - MONGODB_PORT=27017
+      - MONGODB_DATABASE=perbillion
+      - MONGODB_USER=perbillion
+      - MONGODB_PASSWORD=${MONGO_PASSWORD:?MONGO_PASSWORD is required}
+      - ML_ENGINE_URL=http://ml-engine:5000
+      - ALPHAVANTAGE_API_KEY=${ALPHAVANTAGE_API_KEY:?ALPHAVANTAGE_API_KEY is required}
+    ports:
+      - "8080:8080"
+    networks:
+      - perbillion-network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      ml-engine:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Node.js API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+      target: development
+    container_name: perbillion-api-gateway
+    command: sh -c "npm install && npm run dev"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - MONGODB_URI=${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD:?MONGO_PASSWORD is required}@mongodb:27017/perbillion?authSource=admin}
+      - MONGODB_HOST=mongodb
+      - MONGODB_PORT=27017
+      - MONGODB_DATABASE=perbillion
+      - MONGODB_USER=perbillion
+      - MONGODB_PASSWORD=${MONGO_PASSWORD:?MONGO_PASSWORD is required}
+      - SPRING_ORCHESTRATOR_URL=http://spring-orchestrator:8080
+      - ML_ENGINE_URL=http://ml-engine:5000
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - JWT_EXPIRY=7d
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./services/api-gateway:/app
+      - /app/node_modules
+    networks:
+      - perbillion-network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      spring-orchestrator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: perbillion-frontend
+    environment:
+      - VITE_API_URL=http://localhost/api
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./services/frontend:/app
+      - /app/node_modules
+    networks:
+      - perbillion-network
+    depends_on:
+      - api-gateway
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: perbillion-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - perbillion-network
+    depends_on:
+      - frontend
+      - api-gateway
+      - spring-orchestrator
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  perbillion-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  ml_cache:
