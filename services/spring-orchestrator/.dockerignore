@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+
+target
+.mvn
+*.jar
+*.war
+*.class
+
+.github
+.DS_Store
+*.pem
+*.key
+secrets
+src/main/resources/application-local.properties
+src/main/resources/application-*.local.properties

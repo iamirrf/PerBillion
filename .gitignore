@@ -81,9 +81,6 @@ secrets/
 mvnw
 mvnw.cmd
 
-# Docker
-.dockerignore
-
 # Uploads (except .gitkeep)
 services/api-gateway/uploads/*
 !services/api-gateway/uploads/profiles/.gitkeep
