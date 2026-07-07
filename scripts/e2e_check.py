@@ -96,20 +96,18 @@ def main():
     print("token_len:", len(token))
 
     print("\n== Create forecast ==")
-    series = _weekly_series()
     create_body = {
         "ticker": "AAPL",
-        "data": series,
-        "forecastHorizon": 12,
+        "forecastMonths": 12,
         "modelType": "auto",
     }
 
     status, raw = _request(
         "POST",
-        "/api/forecasts",
+        "/api/forecast/generate",
         headers={"Authorization": f"Bearer {token}"},
         body_obj=create_body,
-        timeout=60.0,
+        timeout=180.0,
     )
     created = _json_from_bytes(raw)
     print("create_status:", status)
@@ -129,7 +127,7 @@ def main():
     for i in range(1, 31):
         status, raw = _request(
             "GET",
-            f"/api/forecasts/{forecast_id}",
+            f"/api/forecast/{forecast_id}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=30.0,
         )
