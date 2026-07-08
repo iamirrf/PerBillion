@@ -1,0 +1,38 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN}, www.{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "no-referrer-when-downgrade"
+	}
+
+	handle /health {
+		respond "healthy\n" 200
+	}
+
+	handle /api/health {
+		reverse_proxy api-gateway:3000
+	}
+
+	handle /api* {
+		reverse_proxy api-gateway:3000
+	}
+
+	handle /swagger-ui* {
+		reverse_proxy spring-orchestrator:8080
+	}
+
+	handle /api-docs* {
+		reverse_proxy spring-orchestrator:8080
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+}
