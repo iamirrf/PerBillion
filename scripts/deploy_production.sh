@@ -26,7 +26,8 @@ fi
 ensure_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     if command -v dnf >/dev/null 2>&1; then
-      ${SUDO} dnf install -y docker git curl
+      ${SUDO} dnf install -y git curl
+      ${SUDO} dnf install -y docker-engine || ${SUDO} dnf install -y docker
     elif command -v apt-get >/dev/null 2>&1; then
       ${SUDO} apt-get update
       ${SUDO} apt-get install -y docker.io git curl
@@ -56,6 +57,28 @@ ensure_docker() {
   ${SUDO} chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 }
 
+ensure_swap() {
+  if ! command -v free >/dev/null 2>&1; then
+    return
+  fi
+
+  mem_mb="$(free -m | awk '/^Mem:/ {print $2}')"
+  swap_mb="$(free -m | awk '/^Swap:/ {print $2}')"
+  if [ "${mem_mb:-0}" -ge 1800 ] || [ "${swap_mb:-0}" -ge 1024 ]; then
+    return
+  fi
+
+  if [ ! -f /swapfile ]; then
+    ${SUDO} fallocate -l 2G /swapfile || ${SUDO} dd if=/dev/zero of=/swapfile bs=1M count=2048
+    ${SUDO} chmod 600 /swapfile
+    ${SUDO} mkswap /swapfile
+  fi
+  ${SUDO} swapon /swapfile || true
+  if ! grep -q '^/swapfile ' /etc/fstab; then
+    echo '/swapfile none swap sw 0 0' | ${SUDO} tee -a /etc/fstab >/dev/null
+  fi
+}
+
 ensure_firewall() {
   if command -v firewall-cmd >/dev/null 2>&1; then
     ${SUDO} firewall-cmd --permanent --add-service=http || true
@@ -65,10 +88,19 @@ ensure_firewall() {
 }
 
 ensure_docker
+ensure_swap
 ensure_firewall
 
-${SUDO} docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build
-${SUDO} docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
+compose() {
+  ${SUDO} env COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}" docker compose \
+    --env-file "${ENV_FILE}" \
+    -f "${COMPOSE_FILE}" \
+    "$@"
+}
+
+compose build --pull
+compose up -d
+compose ps
 
 echo "Deployment started. After DNS points at this server, verify:"
 echo "  curl -f https://$(grep '^DOMAIN=' "${ENV_FILE}" | cut -d= -f2)/health"

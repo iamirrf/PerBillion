@@ -2,6 +2,7 @@ services:
   mongodb:
     image: mongo:7
     restart: unless-stopped
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: perbillion
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD is required}
@@ -24,6 +25,8 @@ services:
     restart: unless-stopped
     environment:
       PYTHONUNBUFFERED: "1"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
     volumes:
       - ml_cache:/app/cache
     networks:
@@ -40,6 +43,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=45 -XX:InitialRAMPercentage=20}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required}
       SPRING_DATA_MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required}
@@ -66,6 +70,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
       PORT: "3000"
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required}
       MONGODB_DATABASE: ${MONGODB_DATABASE:?MONGODB_DATABASE is required}
