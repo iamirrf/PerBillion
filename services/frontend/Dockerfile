@@ -15,6 +15,9 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=${VITE_API_URL}
+
 COPY package*.json ./
 RUN npm install
 
@@ -22,7 +25,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM nginx:alpine AS production
 
 # Copy built files
 COPY --from=builder /app/dist /usr/share/nginx/html

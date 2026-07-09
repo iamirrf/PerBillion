@@ -12,6 +12,10 @@ services:
       - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js:ro
     networks:
       - perbillion-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
@@ -47,9 +51,9 @@ services:
     environment:
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=45 -XX:InitialRAMPercentage=20}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
-      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required}
-      SPRING_DATA_MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required}
-      MONGODB_DATABASE: ${MONGODB_DATABASE:?MONGODB_DATABASE is required}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD}@mongodb:27017/perbillion?authSource=admin}
+      SPRING_DATA_MONGODB_URI: ${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD}@mongodb:27017/perbillion?authSource=admin}
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-perbillion}
       ML_ENGINE_URL: http://ml-engine:5000
       ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:?ALPHAVANTAGE_API_KEY is required}
     networks:
@@ -75,8 +79,8 @@ services:
       NODE_ENV: production
       NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
       PORT: "3000"
-      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required}
-      MONGODB_DATABASE: ${MONGODB_DATABASE:?MONGODB_DATABASE is required}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD}@mongodb:27017/perbillion?authSource=admin}
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-perbillion}
       SPRING_ORCHESTRATOR_URL: http://spring-orchestrator:8080
       ML_ENGINE_URL: http://ml-engine:5000
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
@@ -100,6 +104,9 @@ services:
     build:
       context: ./services/frontend
       dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL: /api
     restart: unless-stopped
     networks:
       - perbillion-network

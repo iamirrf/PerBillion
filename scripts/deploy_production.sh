@@ -64,12 +64,12 @@ ensure_swap() {
 
   mem_mb="$(free -m | awk '/^Mem:/ {print $2}')"
   swap_mb="$(free -m | awk '/^Swap:/ {print $2}')"
-  if [ "${mem_mb:-0}" -ge 1800 ] || [ "${swap_mb:-0}" -ge 1024 ]; then
+  if [ "${mem_mb:-0}" -ge 4000 ] || [ "${swap_mb:-0}" -ge 2048 ]; then
     return
   fi
 
   if [ ! -f /swapfile ]; then
-    ${SUDO} fallocate -l 2G /swapfile || ${SUDO} dd if=/dev/zero of=/swapfile bs=1M count=2048
+    ${SUDO} fallocate -l 4G /swapfile || ${SUDO} dd if=/dev/zero of=/swapfile bs=1M count=4096
     ${SUDO} chmod 600 /swapfile
     ${SUDO} mkswap /swapfile
   fi
@@ -98,9 +98,32 @@ compose() {
     "$@"
 }
 
+echo ""
+echo "▸ Validating compose config..."
+compose config --quiet
+echo "  ✅ Config valid."
+
+echo ""
+echo "▸ Building images (sequential to save memory)..."
 compose build --pull
+
+echo ""
+echo "▸ Starting services..."
 compose up -d
+
+echo ""
+echo "▸ Container status:"
 compose ps
 
+echo ""
+echo "▸ Waiting 30s for health checks..."
+sleep 30
+compose ps
+
+DOMAIN="$(grep '^DOMAIN=' "${ENV_FILE}" | cut -d= -f2)"
+echo ""
 echo "Deployment started. After DNS points at this server, verify:"
-echo "  curl -f https://$(grep '^DOMAIN=' "${ENV_FILE}" | cut -d= -f2)/health"
+echo "  curl -f https://${DOMAIN}/health"
+echo ""
+echo "Logs: ${SUDO:-sudo} docker compose --env-file ${ENV_FILE} -f ${COMPOSE_FILE} logs -f"
+
