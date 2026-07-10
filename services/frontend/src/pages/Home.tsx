@@ -1,11 +1,9 @@
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import AnimatedBackground from '../components/AnimatedBackground'
 
 export default function Home() {
   return (
     <div className="min-h-screen relative">
-      <AnimatedBackground />
       
       {/* Navigation */}
       <nav className="relative z-10 px-8 py-6 flex justify-between items-center backdrop-blur-sm border-b border-gold-500/10">

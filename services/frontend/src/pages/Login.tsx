@@ -11,6 +11,8 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [focusedField, setFocusedField] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showForgot, setShowForgot] = useState(false)
   
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
@@ -32,7 +34,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black px-4">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <motion.div 
         className="max-w-md w-full space-y-8"
         initial="initial"
@@ -105,6 +107,7 @@ export default function Login() {
               Password
             </label>
             <motion.div
+              className="relative"
               animate={{
                 scale: focusedField === 'password' ? 1.02 : 1,
               }}
@@ -112,9 +115,9 @@ export default function Login() {
             >
               <input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
-                className="input"
+                className="input pr-10"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onFocus={() => setFocusedField('password')}
@@ -126,7 +129,40 @@ export default function Login() {
                   transition: 'box-shadow 0.2s ease'
                 }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gold-500 hover:text-gold-400 focus:outline-none"
+              >
+                {showPassword ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                )}
+              </button>
             </motion.div>
+            <div className="mt-2 text-right">
+              <button 
+                type="button" 
+                onClick={() => setShowForgot(!showForgot)}
+                className="text-xs text-gold-500 hover:text-gold-400 font-medium"
+              >
+                Forgot password?
+              </button>
+            </div>
+            {showForgot && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }} 
+                animate={{ opacity: 1, height: 'auto' }} 
+                className="mt-3 p-4 bg-black/60 border border-gold-500/30 rounded-lg text-sm text-gray-300"
+              >
+                <p className="mb-2 text-gold-400 font-semibold">Administrator Password Reset</p>
+                <p className="mb-2">Please contact the server administrator to reset your password via the MongoDB CLI:</p>
+                <code className="block bg-gray-900 p-2 rounded border border-gray-800 text-xs text-gray-400 font-mono break-all selection:bg-gold-500/30">
+                  docker exec -it perbillion-mongodb-1 mongosh -u admin -p &lt;pass&gt; --authenticationDatabase admin perbillion --eval "db.users.updateOne(&#123;email: '$&#123;email || 'user@example.com'&#125;'&#125;, &#123;\$set: &#123;password: '&lt;new_bcrypt_hash&gt;'&#125;&#125;)"
+                </code>
+              </motion.div>
+            )}
           </div>
 
           <motion.button
