@@ -165,7 +165,7 @@ export function Profile() {
   const displayName = user?.username || user?.fullName || user?.email || 'User'
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="w-full p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">
