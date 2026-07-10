@@ -17,6 +17,7 @@
 	}
 
 	handle /api/health {
+		rewrite * /health
 		reverse_proxy api-gateway:3000
 	}
 
