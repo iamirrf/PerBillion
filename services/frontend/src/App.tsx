@@ -37,6 +37,7 @@ function AnimatedRoutes() {
               animate="animate"
               exit="exit"
               variants={pageVariants}
+              className="w-full"
             >
               <Home />
             </motion.div>
@@ -49,6 +50,7 @@ function AnimatedRoutes() {
               animate="animate"
               exit="exit"
               variants={pageVariants}
+              className="w-full"
             >
               <Login />
             </motion.div>
@@ -61,6 +63,7 @@ function AnimatedRoutes() {
               animate="animate"
               exit="exit"
               variants={pageVariants}
+              className="w-full"
             >
               <Register />
             </motion.div>
@@ -68,63 +71,72 @@ function AnimatedRoutes() {
         } />
         <Route path="/home" element={
           <PrivateRoute>
-            <Layout>
-              <motion.div
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                variants={pageVariants}
-              >
-                <HomeDashboard />
-              </motion.div>
-            </Layout>
+            <motion.div
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              variants={pageVariants}
+              className="w-full"
+            >
+              <HomeDashboard />
+            </motion.div>
           </PrivateRoute>
         } />
         <Route path="/dashboard" element={<Navigate to="/home" />} />
         <Route path="/forecast" element={
           <PrivateRoute>
-            <Layout>
-              <motion.div
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                variants={pageVariants}
-              >
-                <ForecastDashboard />
-              </motion.div>
-            </Layout>
+            <motion.div
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              variants={pageVariants}
+              className="w-full"
+            >
+              <ForecastDashboard />
+            </motion.div>
           </PrivateRoute>
         } />
         <Route path="/education" element={
           <PrivateRoute>
-            <Layout>
-              <motion.div
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                variants={pageVariants}
-              >
-                <Education />
-              </motion.div>
-            </Layout>
+            <motion.div
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              variants={pageVariants}
+              className="w-full"
+            >
+              <Education />
+            </motion.div>
           </PrivateRoute>
         } />
         <Route path="/profile" element={
           <PrivateRoute>
-            <Layout>
-              <motion.div
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                variants={pageVariants}
-              >
-                <Profile />
-              </motion.div>
-            </Layout>
+            <motion.div
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              variants={pageVariants}
+              className="w-full"
+            >
+              <Profile />
+            </motion.div>
           </PrivateRoute>
         } />
       </Routes>
     </AnimatePresence>
+  )
+}
+
+function AppContent() {
+  const { token } = useAuthStore()
+  
+  return (
+    <div className="h-screen overflow-hidden flex relative">
+      {token && <Layout />}
+      <main className="flex-1 min-w-0 relative z-10 h-screen overflow-y-auto">
+        <AnimatedRoutes />
+      </main>
+    </div>
   )
 }
 
@@ -136,9 +148,8 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
-      {/* AnimatedBackground lives here — never unmounts on route changes */}
       <AnimatedBackground />
-      <AnimatedRoutes />
+      <AppContent />
     </Router>
   )
 }

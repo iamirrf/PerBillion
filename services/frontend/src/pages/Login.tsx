@@ -159,7 +159,7 @@ export default function Login() {
                 <p className="mb-2 text-gold-400 font-semibold">Administrator Password Reset</p>
                 <p className="mb-2">Please contact the server administrator to reset your password via the MongoDB CLI:</p>
                 <code className="block bg-gray-900 p-2 rounded border border-gray-800 text-xs text-gray-400 font-mono break-all selection:bg-gold-500/30">
-                  docker exec -it perbillion-mongodb-1 mongosh -u admin -p &lt;pass&gt; --authenticationDatabase admin perbillion --eval "db.users.updateOne(&#123;email: '$&#123;email || 'user@example.com'&#125;'&#125;, &#123;\$set: &#123;password: '&lt;new_bcrypt_hash&gt;'&#125;&#125;)"
+                  {`docker exec -it perbillion-mongodb-1 mongosh -u admin -p <pass> --authenticationDatabase admin perbillion --eval "db.users.updateOne({email: '${email || 'user@example.com'}'}, {$set: {password: '<new_bcrypt_hash>'}})"`}
                 </code>
               </motion.div>
             )}

@@ -2,11 +2,7 @@ import { useAuthStore } from '../store/authStore'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 
-interface LayoutProps {
-  children: React.ReactNode
-}
-
-export default function Layout({ children }: LayoutProps) {
+export default function Layout() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
@@ -72,11 +68,9 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="h-screen overflow-hidden flex relative">
-      
-      
+    <>
       {/* Sidebar Navigation */}
-      <aside className={`${isCollapsed ? 'w-20' : 'w-64'} sticky top-0 h-screen overflow-hidden flex-shrink-0 relative z-10 flex flex-col border-r border-gold-500/20 backdrop-blur-xl bg-black/40 transition-all duration-300`}>
+      <aside className={`${isCollapsed ? 'w-20' : 'w-64'} sticky top-0 h-screen overflow-hidden flex-shrink-0 relative z-20 flex flex-col border-r border-gold-500/20 backdrop-blur-xl bg-black/40 transition-all duration-300`}>
         {/* Logo and Collapse Button */}
         <div className="p-6 border-b border-gold-500/20 flex items-center justify-between">
           {!isCollapsed && (
@@ -190,13 +184,6 @@ export default function Layout({ children }: LayoutProps) {
           })}
         </nav>
       </aside>
-
-
-
-      {/* Main Content */}
-      <main className="flex-1 min-w-0 relative z-10 h-screen overflow-y-auto">
-        {children}
-      </main>
-    </div>
+    </>
   )
 }
