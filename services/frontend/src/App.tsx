@@ -29,87 +29,38 @@ function AnimatedRoutes() {
     <Routes location={location}>
       <Route path="/" element={
         <PublicRoute>
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={pageVariants}
-            className="w-full"
-          >
-            <Home />
-          </motion.div>
+          <Home />
         </PublicRoute>
       } />
       <Route path="/login" element={
         <PublicRoute>
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={pageVariants}
-            className="w-full"
-          >
-            <Login />
-          </motion.div>
+          <Login />
         </PublicRoute>
       } />
       <Route path="/register" element={
         <PublicRoute>
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={pageVariants}
-            className="w-full"
-          >
-            <Register />
-          </motion.div>
+          <Register />
         </PublicRoute>
       } />
       <Route path="/home" element={
         <PrivateRoute>
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={pageVariants}
-            className="w-full"
-          >
-            <HomeDashboard />
-          </motion.div>
+          <HomeDashboard />
         </PrivateRoute>
       } />
       <Route path="/dashboard" element={<Navigate to="/home" />} />
       <Route path="/forecast" element={
         <PrivateRoute>
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={pageVariants}
-            className="w-full"
-          >
-            <ForecastDashboard />
-          </motion.div>
+          <ForecastDashboard />
         </PrivateRoute>
       } />
       <Route path="/education" element={
         <PrivateRoute>
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={pageVariants}
-            className="w-full"
-          >
-            <Education />
-          </motion.div>
+          <Education />
         </PrivateRoute>
       } />
       <Route path="/profile" element={
         <PrivateRoute>
-          <motion.div
-            initial="initial"
-            animate="animate"
-            variants={pageVariants}
-            className="w-full"
-          >
-            <Profile />
-          </motion.div>
+          <Profile />
         </PrivateRoute>
       } />
     </Routes>
