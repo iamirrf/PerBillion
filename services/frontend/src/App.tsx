@@ -13,14 +13,12 @@ import AnimatedBackground from './components/AnimatedBackground'
 import { pageVariants } from './utils/animations'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { token, _hasHydrated } = useAuthStore()
-  if (!_hasHydrated) return null
+  const { token } = useAuthStore()
   return token ? <>{children}</> : <Navigate to="/login" />
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { token, _hasHydrated } = useAuthStore()
-  if (!_hasHydrated) return null
+  const { token } = useAuthStore()
   return !token ? <>{children}</> : <Navigate to="/home" />
 }
 
@@ -28,107 +26,103 @@ function AnimatedRoutes() {
   const location = useLocation()
   
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={
-          <PublicRoute>
-            <motion.div
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={pageVariants}
-              className="w-full"
-            >
-              <Home />
-            </motion.div>
-          </PublicRoute>
-        } />
-        <Route path="/login" element={
-          <PublicRoute>
-            <motion.div
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={pageVariants}
-              className="w-full"
-            >
-              <Login />
-            </motion.div>
-          </PublicRoute>
-        } />
-        <Route path="/register" element={
-          <PublicRoute>
-            <motion.div
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={pageVariants}
-              className="w-full"
-            >
-              <Register />
-            </motion.div>
-          </PublicRoute>
-        } />
-        <Route path="/home" element={
-          <PrivateRoute>
-            <motion.div
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={pageVariants}
-              className="w-full"
-            >
-              <HomeDashboard />
-            </motion.div>
-          </PrivateRoute>
-        } />
-        <Route path="/dashboard" element={<Navigate to="/home" />} />
-        <Route path="/forecast" element={
-          <PrivateRoute>
-            <motion.div
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={pageVariants}
-              className="w-full"
-            >
-              <ForecastDashboard />
-            </motion.div>
-          </PrivateRoute>
-        } />
-        <Route path="/education" element={
-          <PrivateRoute>
-            <motion.div
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={pageVariants}
-              className="w-full"
-            >
-              <Education />
-            </motion.div>
-          </PrivateRoute>
-        } />
-        <Route path="/profile" element={
-          <PrivateRoute>
-            <motion.div
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={pageVariants}
-              className="w-full"
-            >
-              <Profile />
-            </motion.div>
-          </PrivateRoute>
-        } />
-      </Routes>
-    </AnimatePresence>
+    <Routes location={location}>
+      <Route path="/" element={
+        <PublicRoute>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={pageVariants}
+            className="w-full"
+          >
+            <Home />
+          </motion.div>
+        </PublicRoute>
+      } />
+      <Route path="/login" element={
+        <PublicRoute>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={pageVariants}
+            className="w-full"
+          >
+            <Login />
+          </motion.div>
+        </PublicRoute>
+      } />
+      <Route path="/register" element={
+        <PublicRoute>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={pageVariants}
+            className="w-full"
+          >
+            <Register />
+          </motion.div>
+        </PublicRoute>
+      } />
+      <Route path="/home" element={
+        <PrivateRoute>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={pageVariants}
+            className="w-full"
+          >
+            <HomeDashboard />
+          </motion.div>
+        </PrivateRoute>
+      } />
+      <Route path="/dashboard" element={<Navigate to="/home" />} />
+      <Route path="/forecast" element={
+        <PrivateRoute>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={pageVariants}
+            className="w-full"
+          >
+            <ForecastDashboard />
+          </motion.div>
+        </PrivateRoute>
+      } />
+      <Route path="/education" element={
+        <PrivateRoute>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={pageVariants}
+            className="w-full"
+          >
+            <Education />
+          </motion.div>
+        </PrivateRoute>
+      } />
+      <Route path="/profile" element={
+        <PrivateRoute>
+          <motion.div
+            initial="initial"
+            animate="animate"
+            variants={pageVariants}
+            className="w-full"
+          >
+            <Profile />
+          </motion.div>
+        </PrivateRoute>
+      } />
+    </Routes>
   )
 }
 
 function AppContent() {
-  const { token } = useAuthStore()
+  const { token, _hasHydrated } = useAuthStore()
+  
+  // Show a blank transparent screen until auth state hydrates to prevent FOUC / Pop-in
+  if (!_hasHydrated) {
+    return <div className="h-screen w-screen bg-transparent" />
+  }
   
   return (
     <div className="h-screen overflow-hidden flex relative">
