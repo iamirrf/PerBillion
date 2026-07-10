@@ -9,15 +9,18 @@ import { HomeDashboard } from './pages/HomeDashboard'
 import { Education } from './pages/Education'
 import { Profile } from './pages/Profile'
 import Layout from './components/Layout'
+import AnimatedBackground from './components/AnimatedBackground'
 import { pageVariants } from './utils/animations'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { token } = useAuthStore()
+  const { token, _hasHydrated } = useAuthStore()
+  if (!_hasHydrated) return null
   return token ? <>{children}</> : <Navigate to="/login" />
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { token } = useAuthStore()
+  const { token, _hasHydrated } = useAuthStore()
+  if (!_hasHydrated) return null
   return !token ? <>{children}</> : <Navigate to="/home" />
 }
 
@@ -133,10 +136,13 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
+      {/* AnimatedBackground lives here — never unmounts on route changes */}
+      <AnimatedBackground />
       <AnimatedRoutes />
     </Router>
   )
 }
 
 export default App
+
 

@@ -1,6 +1,5 @@
 import { useAuthStore } from '../store/authStore'
 import { useNavigate, useLocation } from 'react-router-dom'
-import AnimatedBackground from './AnimatedBackground'
 import { useState } from 'react'
 
 interface LayoutProps {
@@ -22,7 +21,7 @@ export default function Layout({ children }: LayoutProps) {
   const getImageUrl = (path: string | undefined) => {
     if (!path) return ''
     if (path.startsWith('http')) return path
-    return `http://localhost:3000${path.startsWith('/') ? path : '/' + path}`
+    return `/api${path.startsWith('/') ? path : '/' + path}`
   }
 
   const navItems = [
@@ -74,7 +73,7 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="h-screen overflow-hidden flex relative">
-      <AnimatedBackground />
+      
       
       {/* Sidebar Navigation */}
       <aside className={`${isCollapsed ? 'w-20' : 'w-64'} sticky top-0 h-screen overflow-hidden flex-shrink-0 relative z-10 flex flex-col border-r border-gold-500/20 backdrop-blur-xl bg-black/40 transition-all duration-300`}>
