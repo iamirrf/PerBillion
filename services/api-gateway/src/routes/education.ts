@@ -315,4 +315,55 @@ router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) 
   }
 });
 
+// POST /api/education/seed - Re-seed lessons database with all 30 expanded lessons
+router.post('/seed', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const mongoDb = await getDb();
+    const beginnerLessons = require('../../../../database/mongodb/seeds/beginner-lessons');
+    const intermediateLessons = require('../../../../database/mongodb/seeds/intermediate-lessons');
+    const expertLessons = require('../../../../database/mongodb/seeds/expert-lessons');
+    
+    const allLessons = [...beginnerLessons, ...intermediateLessons, ...expertLessons];
+    const lessonsColl = mongoDb.collection('lessons');
+
+    let totalWords = 0;
+    for (const lesson of allLessons) {
+      const wordCount = lesson.content ? lesson.content.split(/\s+/).filter(Boolean).length : 0;
+      totalWords += wordCount;
+
+      await lessonsColl.updateOne(
+        { lessonId: lesson.lessonId },
+        {
+          $set: {
+            lessonId: lesson.lessonId,
+            level: lesson.level,
+            order: lesson.order,
+            title: lesson.title,
+            duration: lesson.duration,
+            content: lesson.content,
+            quiz: lesson.quiz,
+            updatedAt: new Date()
+          }
+        },
+        { upsert: true }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully seeded ${allLessons.length} lessons into MongoDB`,
+      totalLessons: allLessons.length,
+      totalWords,
+      averageWordsPerLesson: Math.round(totalWords / allLessons.length)
+    });
+  } catch (error: any) {
+    console.error('Error seeding lessons via API:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to seed lessons'
+    });
+  }
+});
+
 export default router;
+

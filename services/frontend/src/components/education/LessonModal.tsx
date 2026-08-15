@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lesson } from '../../store/educationStore';
 import { QuizSection } from './QuizSection';
+import { LessonContentRenderer } from './LessonContentRenderer';
 
 interface LessonModalProps {
   lesson: Lesson;
@@ -32,96 +33,6 @@ export const LessonModal: React.FC<LessonModalProps> = ({ lesson, onClose, onCom
   const handleQuizComplete = (score: number) => {
     const timeSpent = Math.round((Date.now() - startTime) / 60000); // Convert to minutes
     onComplete(score, timeSpent);
-  };
-
-  // Simple markdown-like rendering
-  const renderContent = (content: string) => {
-    const lines = content.split('\n');
-    const elements: React.ReactNode[] = [];
-    let inList = false;
-    let listItems: string[] = [];
-
-    const flushList = () => {
-      if (listItems.length > 0) {
-        elements.push(
-          <ul key={`list-${elements.length}`} className="list-disc list-inside text-gray-300 space-y-2 mb-4 ml-4">
-            {listItems.map((item, i) => (
-              <li key={i} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(item) }} />
-            ))}
-          </ul>
-        );
-        listItems = [];
-        inList = false;
-      }
-    };
-
-    const formatInlineMarkdown = (text: string) => {
-      return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
-        .replace(/`(.*?)`/g, '<code class="px-2 py-1 bg-gray-800 text-gold-400 rounded text-sm">$1</code>');
-    };
-
-    lines.forEach((line, index) => {
-      const trimmed = line.trim();
-      
-      if (!trimmed) {
-        flushList();
-        return;
-      }
-
-      // Headers
-      if (trimmed.startsWith('# ')) {
-        flushList();
-        elements.push(
-          <h1 key={`h1-${index}`} className="text-3xl font-bold text-gold-400 mb-4 mt-6">
-            {trimmed.substring(2)}
-          </h1>
-        );
-      } else if (trimmed.startsWith('## ')) {
-        flushList();
-        elements.push(
-          <h2 key={`h2-${index}`} className="text-2xl font-bold text-gold-400 mt-8 mb-4">
-            {trimmed.substring(3)}
-          </h2>
-        );
-      } else if (trimmed.startsWith('### ')) {
-        flushList();
-        elements.push(
-          <h3 key={`h3-${index}`} className="text-xl font-bold text-white mt-6 mb-3">
-            {trimmed.substring(4)}
-          </h3>
-        );
-      }
-      // List items
-      else if (trimmed.match(/^[-*]\s/)) {
-        inList = true;
-        listItems.push(trimmed.substring(2));
-      }
-      // Numbered lists
-      else if (trimmed.match(/^\d+\.\s/)) {
-        flushList();
-        const match = trimmed.match(/^\d+\.\s(.*)$/);
-        if (match) {
-          listItems.push(match[1]);
-          inList = true;
-        }
-      }
-      // Regular paragraphs
-      else {
-        flushList();
-        elements.push(
-          <p 
-            key={`p-${index}`} 
-            className="text-gray-300 leading-relaxed mb-4"
-            dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(trimmed) }}
-          />
-        );
-      }
-    });
-
-    flushList();
-    return elements;
   };
 
   return (
@@ -159,8 +70,8 @@ export const LessonModal: React.FC<LessonModalProps> = ({ lesson, onClose, onCom
           {!showQuiz ? (
             <div className="animate-slide-up">
               {/* Lesson Content */}
-              <div className="prose-custom max-w-none mb-8">
-                {lesson.content && renderContent(lesson.content)}
+              <div className="mb-8">
+                {lesson.content && <LessonContentRenderer content={lesson.content} />}
               </div>
 
               {/* Start Quiz Button */}
