@@ -8,24 +8,24 @@ from urllib.parse import quote
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--mongo-password-file", required=True, type=Path)
+parser.add_argument("--app-password-file", required=True, type=Path)
 parser.add_argument("--jwt-secret-file", required=True, type=Path)
 parser.add_argument("--alpha-env-file", required=True, type=Path)
 parser.add_argument("--output-dir", required=True, type=Path)
 parser.add_argument("--public-origin", default="https://perbillion.invalid")
 args = parser.parse_args()
 
-mongo_password = args.mongo_password_file.read_text().strip()
+app_password = args.app_password_file.read_text().strip()
 jwt_secret = args.jwt_secret_file.read_text().strip()
 alpha_lines = args.alpha_env_file.read_text().splitlines()
 alpha_matches = [line.split("=", 1)[1].strip().strip("\"'") for line in alpha_lines
                  if line.startswith("ALPHAVANTAGE_API_KEY=")]
-if not mongo_password or not jwt_secret or len(alpha_matches) != 1 or not alpha_matches[0]:
+if not app_password or not jwt_secret or len(alpha_matches) != 1 or not alpha_matches[0]:
     raise SystemExit("A required deployment secret is missing")
 
 mongo_uri = (
-    f"mongodb://perbillion:{quote(mongo_password, safe='')}@10.128.0.2:27017/"
-    "perbillion?authSource=admin&directConnection=true"
+    f"mongodb://perbillion_app:{quote(app_password, safe='')}@10.128.0.2:27017/"
+    "perbillion?authSource=perbillion&directConnection=true"
 )
 
 
