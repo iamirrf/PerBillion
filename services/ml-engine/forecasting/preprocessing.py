@@ -62,11 +62,17 @@ class DataPreprocessor:
         
         # 1. Handle duplicates (already done above)
         
-        # 2. Detect and handle missing dates (especially weekends)
-        series = self._handle_missing_dates(
-            series, 
-            method=config.get('handle_weekends', 'business_days')
-        )
+        # Weekly market data must stay weekly. Expanding it to business days
+        # changes each model step from a week to a day and mislabels forecasts.
+        if self._is_weekly_series(series):
+            original_count = len(series)
+            series = series.resample('W-FRI').last().ffill()
+            self._log(f"Kept weekly trading cadence: {original_count} observations, {len(series)} weekly periods")
+        else:
+            series = self._handle_missing_dates(
+                series,
+                method=config.get('handle_weekends', 'business_days')
+            )
         
         # 3. Handle missing values
         series = self._handle_missing_values(
@@ -104,6 +110,13 @@ class DataPreprocessor:
             'preprocessing_log': self.preprocessing_log,
             'quality_metrics': quality_metrics
         }
+
+    @staticmethod
+    def _is_weekly_series(series: pd.Series) -> bool:
+        if len(series) < 3:
+            return False
+        gaps = series.index.to_series().diff().dropna().dt.days
+        return gaps.median() >= 6 and (gaps >= 5).mean() >= 0.8
     
     def _handle_missing_dates(self, series: pd.Series, method: str = 'business_days') -> pd.Series:
         """

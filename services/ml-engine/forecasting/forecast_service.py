@@ -412,8 +412,8 @@ class ForecastService:
         freq = pd.infer_freq(series.index)
         
         if freq is None:
-            # Assume weekly if frequency can't be inferred
-            freq = 'W'
+            # Historical market series are weekly; use trading-week closes.
+            freq = 'W-FRI'
         
         # Use pandas offsets (e.g. "W-MON") instead of Timedelta strings.
         offset = pd.tseries.frequencies.to_offset(freq)

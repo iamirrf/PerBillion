@@ -60,6 +60,8 @@ jobs:
           docker compose -f docker-compose.production.yml up -d --wait --wait-timeout 300
       - name: Exercise service and account integration
         run: python3 scripts/compose-smoke.py
+      - name: Verify weekly forecast cadence
+        run: docker compose -f docker-compose.production.yml exec -T ml-engine python -m unittest discover -s tests -p 'test_*.py'
       - name: Service state and logs on failure
         if: failure()
         run: |
