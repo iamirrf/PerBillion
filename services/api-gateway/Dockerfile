@@ -59,3 +59,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Run
 CMD ["node", "dist/server.js"]
+
+FROM production AS cloudrun
+RUN apk add --no-cache curl
+COPY cloudrun-entrypoint.sh /app/cloudrun-entrypoint.sh
+ENTRYPOINT ["/bin/sh", "/app/cloudrun-entrypoint.sh"]

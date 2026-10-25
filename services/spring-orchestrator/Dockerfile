@@ -11,7 +11,7 @@ COPY src ./src
 RUN mvn clean package -DskipTests
 
 # Runtime stage
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre AS production
 
 WORKDIR /app
 
@@ -30,3 +30,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run application
 ENTRYPOINT ["java", "-jar", "app.jar"]
+
+FROM production AS cloudrun
+COPY cloudrun-entrypoint.sh /app/cloudrun-entrypoint.sh
+ENTRYPOINT ["/bin/sh", "/app/cloudrun-entrypoint.sh"]

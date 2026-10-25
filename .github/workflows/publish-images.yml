@@ -19,9 +19,9 @@ jobs:
           - service: frontend
             target: cloudrun
           - service: api-gateway
-            target: production
+            target: cloudrun
           - service: spring-orchestrator
-            target: ''
+            target: cloudrun
           - service: ml-engine
             target: ''
     steps:
