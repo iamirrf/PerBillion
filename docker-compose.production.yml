@@ -1,0 +1,86 @@
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: perbillion
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Set MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: perbillion
+    volumes:
+      - mongodb_data:/data/db
+      - ./database/mongodb/init.js:/docker-entrypoint-initdb.d/init.js:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  ml-engine:
+    build: ./services/ml-engine
+    restart: unless-stopped
+    environment:
+      WEB_CONCURRENCY: 1
+      GUNICORN_THREADS: 2
+    volumes:
+      - ml_cache:/app/cache
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  spring-orchestrator:
+    build: ./services/spring-orchestrator
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD:?Set MONGO_PASSWORD}@mongodb:27017/perbillion?authSource=admin}
+      ML_ENGINE_URL: http://ml-engine:5000
+      ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:?Set ALPHAVANTAGE_API_KEY}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      ml-engine:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      target: production
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: ${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD:?Set MONGO_PASSWORD}@mongodb:27017/perbillion?authSource=admin}
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-perbillion}
+      PERSIST_UPLOADS_IN_MONGO: 'true'
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      JWT_EXPIRY: ${JWT_EXPIRY:-7d}
+      FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL to the public origin}
+      SPRING_ORCHESTRATOR_URL: http://spring-orchestrator:8080
+      FORECAST_DAILY_LIMIT: ${FORECAST_DAILY_LIMIT:-25}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      spring-orchestrator:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./services/frontend
+      target: production
+      args:
+        VITE_API_URL: /api
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PERBILLION_HTTP_PORT:-8088}:80"
+    volumes:
+      - ./nginx/production.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - api-gateway
+
+volumes:
+  mongodb_data:
+  ml_cache:

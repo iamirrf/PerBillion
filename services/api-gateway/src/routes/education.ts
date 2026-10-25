@@ -1,369 +1,203 @@
-import { Router, Request, Response } from 'express';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { Router, Response } from 'express';
+import { authenticateToken, AuthRequest, requireRole } from '../middleware/auth';
 import { getDb } from '../utils/db';
+import { completeLesson, initialProgress, LearningProgress, publicProgress, validCompletion, validLessonId } from '../utils/educationProgress';
+import logger from '../utils/logger';
+import curriculumV2Ids from '../data/curriculum-v2-ids.json';
 
 const router = Router();
+const levels = ['beginner', 'intermediate', 'expert'];
+const currentLessonIds = new Set(curriculumV2Ids);
+let currentProgressIndex: Promise<string> | undefined;
 
-// GET /api/education/lessons - Fetch all lessons (optionally filtered by level)
-router.get('/lessons', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const { level } = req.query;
-    const mongoDb = await getDb();
-    
-    const query = level ? { level: level.toString() } : {};
-    const lessons = await mongoDb
-      .collection('lessons')
-      .find(query)
-      .sort({ level: 1, order: 1 })
-      .project({ content: 0 }) // Exclude content from list view
-      .toArray();
-
-    res.json({
-      success: true,
-      lessons: lessons.map(lesson => ({
-        lessonId: lesson.lessonId,
-        level: lesson.level,
-        order: lesson.order,
-        title: lesson.title,
-        duration: lesson.duration,
-        quizLength: lesson.quiz?.length || 0
-      }))
-    });
-  } catch (error) {
-    console.error('Error fetching lessons:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch lessons'
-    });
+async function v2Collection() {
+  const collection = (await getDb()).collection<{
+    userId: string; lessonId: string; score: number; completedAt: Date;
+  }>('education_progress_v2');
+  // The unique key makes simultaneous completions from two devices safe.
+  if (!currentProgressIndex) {
+    currentProgressIndex = collection.createIndex({ userId: 1, lessonId: 1 }, { unique: true })
+      .catch(error => { currentProgressIndex = undefined; throw error; });
   }
-});
+  await currentProgressIndex;
+  return collection;
+}
 
-// GET /api/education/lessons/:lessonId - Fetch single lesson with content
-router.get('/lessons/:lessonId', authenticateToken, async (req: AuthRequest, res: Response) => {
+// The current 24 lessons have independent progress. Legacy completions remain in
+// education_progress and can still be read as a prior-coursework transcript.
+router.get('/v2/progress', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { lessonId } = req.params;
-    const mongoDb = await getDb();
-    
-    const lesson = await mongoDb
-      .collection('lessons')
-      .findOne({ lessonId });
-
-    if (!lesson) {
-      return res.status(404).json({
-        success: false,
-        error: 'Lesson not found'
-      });
+    const rows = await (await v2Collection()).find({ userId: req.user!.id }).toArray();
+    const completed: Record<string, { score: number; completedAt: Date }> = {};
+    for (const row of rows) {
+      if (currentLessonIds.has(row.lessonId)) completed[row.lessonId] = {
+        score: row.score, completedAt: row.completedAt,
+      };
     }
-
-    res.json({
-      success: true,
-      lesson: {
-        lessonId: lesson.lessonId,
-        level: lesson.level,
-        order: lesson.order,
-        title: lesson.title,
-        duration: lesson.duration,
-        content: lesson.content,
-        quiz: lesson.quiz
-      }
-    });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, completed });
   } catch (error) {
-    console.error('Error fetching lesson:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch lesson'
-    });
+    logger.error('Error fetching current curriculum progress:', error);
+    return res.status(503).json({ success: false, error: 'Progress is temporarily unavailable' });
   }
 });
 
-// GET /api/education/progress - Get user's education progress
+router.put('/v2/progress/:lessonId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const { lessonId } = req.params;
+  const { score } = req.body || {};
+  if (!currentLessonIds.has(lessonId) || !Number.isInteger(score) || score < 0 || score > 100) {
+    return res.status(400).json({ success: false, error: 'Choose a current lesson and an integer score from 0–100' });
+  }
+  try {
+    const row = await (await v2Collection()).findOneAndUpdate(
+      { userId: req.user!.id, lessonId },
+      { $setOnInsert: { userId: req.user!.id, lessonId, completedAt: new Date() }, $max: { score } },
+      { upsert: true, returnDocument: 'after' },
+    );
+    if (!row) throw new Error('Progress update returned no document');
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, completion: { score: row.score, completedAt: row.completedAt } });
+  } catch (error) {
+    logger.error('Error saving current curriculum progress:', error);
+    return res.status(503).json({ success: false, error: 'Unable to save progress. Please try again.' });
+  }
+});
+
+router.delete('/v2/progress', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    await (await v2Collection()).deleteMany({ userId: req.user!.id });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, completed: {} });
+  } catch (error) {
+    logger.error('Error resetting current curriculum progress:', error);
+    return res.status(503).json({ success: false, error: 'Unable to reset progress. Please try again.' });
+  }
+});
+
+// Educational content is free to read without an account.
+router.get('/lessons', async (req, res: Response) => {
+  const { level } = req.query;
+  if (level !== undefined && (typeof level !== 'string' || !levels.includes(level))) {
+    return res.status(400).json({ success: false, error: 'Choose beginner, intermediate, or expert' });
+  }
+  try {
+    const db = await getDb();
+    const lessons = await db.collection('lessons').find(level ? { level } : {})
+      .project({ lessonId: 1, level: 1, order: 1, title: 1, duration: 1, quiz: 1 }).toArray();
+    lessons.sort((a, b) => levels.indexOf(a.level) - levels.indexOf(b.level) || a.order - b.order);
+    return res.json({ success: true, lessons: lessons.map(lesson => ({
+      lessonId: lesson.lessonId, level: lesson.level, order: lesson.order,
+      title: lesson.title, duration: lesson.duration, quizLength: lesson.quiz?.length || 0,
+    })) });
+  } catch (error) {
+    logger.error('Error fetching lessons:', error);
+    return res.status(503).json({ success: false, error: 'Lessons are temporarily unavailable' });
+  }
+});
+
+router.get('/lessons/:lessonId', async (req, res: Response) => {
+  if (!validLessonId(req.params.lessonId)) return res.status(400).json({ success: false, error: 'Invalid lesson ID' });
+  try {
+    const db = await getDb();
+    const lesson = await db.collection('lessons').findOne({ lessonId: req.params.lessonId });
+    if (!lesson) return res.status(404).json({ success: false, error: 'Lesson not found' });
+    return res.json({ success: true, lesson: {
+      lessonId: lesson.lessonId, level: lesson.level, order: lesson.order, title: lesson.title,
+      duration: lesson.duration, content: lesson.content, quiz: lesson.quiz,
+    } });
+  } catch (error) {
+    logger.error('Error fetching lesson:', error);
+    return res.status(503).json({ success: false, error: 'This lesson is temporarily unavailable' });
+  }
+});
+
 router.get('/progress', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    const db = await getDb();
     const userId = req.user!.id;
-    const mongoDb = await getDb();
-    
-    let progress: any = await mongoDb
-      .collection('education_progress')
-      .findOne({ userId });
-
-    // Initialize progress if doesn't exist
-    if (!progress) {
-      const newProgress = {
-        userId,
-        currentLevel: 'beginner',
-        completedLessons: [],
-        quizScores: {},
-        streakDays: 0,
-        totalTimeSpent: 0,
-        badges: [],
-        lastAccessedAt: new Date()
-      };
-      
-      await mongoDb.collection('education_progress').insertOne(newProgress);
-      progress = newProgress;
-    } else {
-      // Update last accessed
-      await mongoDb.collection('education_progress').updateOne(
-        { userId },
-        { $set: { lastAccessedAt: new Date() } }
-      );
-    }
-
-    res.json({
-      success: true,
-      progress: {
-        currentLevel: progress.currentLevel,
-        completedLessons: progress.completedLessons,
-        quizScores: progress.quizScores,
-        streakDays: progress.streakDays,
-        totalTimeSpent: progress.totalTimeSpent,
-        badges: progress.badges,
-        lastAccessedAt: progress.lastAccessedAt
-      }
-    });
+    const progress = await db.collection<LearningProgress>('education_progress').findOneAndUpdate(
+      { userId }, { $setOnInsert: initialProgress(userId) }, { upsert: true, returnDocument: 'after' });
+    return res.json({ success: true, progress: publicProgress(progress!) });
   } catch (error) {
-    console.error('Error fetching progress:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch progress'
-    });
+    logger.error('Error fetching progress:', error);
+    return res.status(503).json({ success: false, error: 'Your progress is temporarily unavailable' });
   }
 });
 
-// POST /api/education/progress - Update lesson completion and quiz score
 router.post('/progress', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const { lessonId, quizScore, timeSpent } = req.body;
+  if (!validCompletion(lessonId, quizScore, timeSpent)) {
+    return res.status(400).json({ success: false,
+      error: 'Provide a valid lesson ID, an integer score from 0–100, and optional minutes from 0–1440' });
+  }
   try {
+    const db = await getDb();
+    if (!await db.collection('lessons').findOne({ lessonId }, { projection: { _id: 1 } })) {
+      return res.status(404).json({ success: false, error: 'Lesson not found' });
+    }
     const userId = req.user!.id;
-    const { lessonId, quizScore, timeSpent } = req.body;
+    const collection = db.collection<LearningProgress>('education_progress');
+    await collection.updateOne({ userId }, { $setOnInsert: initialProgress(userId) }, { upsert: true });
 
-    if (!lessonId || quizScore === undefined) {
-      return res.status(400).json({
-        success: false,
-        error: 'lessonId and quizScore are required'
-      });
-    }
-
-    const mongoDb = await getDb();
-    
-    // Fetch current progress
-    let progress: any = await mongoDb
-      .collection('education_progress')
-      .findOne({ userId });
-
-    if (!progress) {
-      // Initialize if doesn't exist
-      progress = {
-        userId,
-        currentLevel: 'beginner',
-        completedLessons: [],
-        quizScores: {},
-        streakDays: 0,
-        totalTimeSpent: 0,
-        badges: [],
-        lastAccessedAt: new Date()
-      };
-    }
-
-    // Check if lesson already completed
-    const alreadyCompleted = progress.completedLessons.some(
-      (lesson: any) => lesson.lessonId === lessonId
-    );
-
-    // Update completion
-    if (!alreadyCompleted) {
-      progress.completedLessons.push({
-        lessonId,
-        completedAt: new Date(),
-        quizScore: parseInt(quizScore)
-      });
-    } else {
-      // Update existing completion with new score if higher
-      progress.completedLessons = progress.completedLessons.map((lesson: any) => {
-        if (lesson.lessonId === lessonId && parseInt(quizScore) > lesson.quizScore) {
-          return { ...lesson, quizScore: parseInt(quizScore), completedAt: new Date() };
-        }
-        return lesson;
-      });
-    }
-
-    // Update quiz scores
-    progress.quizScores = progress.quizScores || {};
-    progress.quizScores[lessonId] = Math.max(
-      progress.quizScores[lessonId] || 0,
-      parseInt(quizScore)
-    );
-
-    // Update time spent
-    if (timeSpent) {
-      progress.totalTimeSpent = (progress.totalTimeSpent || 0) + parseInt(timeSpent);
-    }
-
-    // Calculate streak
-    const today = new Date().setHours(0, 0, 0, 0);
-    const lastAccessed = new Date(progress.lastAccessedAt).setHours(0, 0, 0, 0);
-    const daysDiff = (today - lastAccessed) / (1000 * 60 * 60 * 24);
-
-    if (daysDiff === 1) {
-      progress.streakDays++;
-    } else if (daysDiff > 1) {
-      progress.streakDays = 1;
-    }
-    // If daysDiff === 0, keep current streak
-
-    // Award badges based on milestones
-    const badges = new Set(progress.badges || []);
-    const completedCount = progress.completedLessons.length;
-    
-    if (completedCount >= 1 && !badges.has('first-lesson')) badges.add('first-lesson');
-    if (completedCount >= 5 && !badges.has('5-lessons')) badges.add('5-lessons');
-    if (completedCount >= 10 && !badges.has('beginner-complete')) badges.add('beginner-complete');
-    if (completedCount >= 20 && !badges.has('intermediate-complete')) badges.add('intermediate-complete');
-    if (completedCount >= 30 && !badges.has('expert-complete')) badges.add('expert-complete');
-    if (progress.streakDays >= 5 && !badges.has('5-day-streak')) badges.add('5-day-streak');
-    if (progress.streakDays >= 10 && !badges.has('10-day-streak')) badges.add('10-day-streak');
-    if (quizScore === 100 && !badges.has('perfect-score')) badges.add('perfect-score');
-    
-    progress.badges = Array.from(badges);
-    progress.lastAccessedAt = new Date();
-
-    // Determine level progression
-    if (completedCount >= 10 && completedCount < 20) {
-      progress.currentLevel = 'intermediate';
-    } else if (completedCount >= 20) {
-      progress.currentLevel = 'expert';
-    }
-
-    // Upsert progress
-    await mongoDb.collection('education_progress').updateOne(
-      { userId },
-      { $set: progress },
-      { upsert: true }
-    );
-
-    res.json({
-      success: true,
-      progress: {
-        currentLevel: progress.currentLevel,
-        completedLessons: progress.completedLessons,
-        quizScores: progress.quizScores,
-        streakDays: progress.streakDays,
-        totalTimeSpent: progress.totalTimeSpent,
-        badges: progress.badges,
-        newBadges: Array.from(badges).filter(badge => 
-          !req.body.existingBadges || !req.body.existingBadges.includes(badge)
-        )
+    // Optimistic concurrency prevents two open lessons overwriting each other's progress.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const current = await collection.findOne({ userId });
+      if (!current) break;
+      const next = completeLesson(current, lessonId, quizScore, timeSpent);
+      const result = await collection.updateOne({ userId,
+        revision: current.revision === undefined ? { $exists: false } : current.revision }, { $set: next });
+      if (result.matchedCount) {
+        const newBadges = next.badges.filter(badge => !current.badges?.includes(badge));
+        return res.json({ success: true, progress: { ...publicProgress(next), newBadges } });
       }
-    });
+    }
+    return res.status(409).json({ success: false, error: 'Progress changed in another tab. Please try again.' });
   } catch (error) {
-    console.error('Error updating progress:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to update progress'
-    });
+    logger.error('Error updating progress:', error);
+    return res.status(503).json({ success: false, error: 'Unable to save progress. Please try again.' });
   }
 });
 
-// GET /api/education/stats - Get overall education statistics
 router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user!.id;
-    const mongoDb = await getDb();
-    
-    const progress = await mongoDb
-      .collection('education_progress')
-      .findOne({ userId });
-
-    if (!progress) {
-      return res.json({
-        success: true,
-        stats: {
-          totalLessons: 30,
-          completedLessons: 0,
-          currentLevel: 'beginner',
-          averageQuizScore: 0,
-          streakDays: 0,
-          badges: [],
-          totalTimeSpent: 0
-        }
-      });
-    }
-
-    // Calculate average quiz score
-    const scores = Object.values(progress.quizScores || {}) as number[];
-    const averageQuizScore = scores.length > 0
-      ? scores.reduce((a, b) => a + b, 0) / scores.length
-      : 0;
-
-    res.json({
-      success: true,
-      stats: {
-        totalLessons: 30,
-        completedLessons: progress.completedLessons.length,
-        currentLevel: progress.currentLevel,
-        averageQuizScore: Math.round(averageQuizScore),
-        streakDays: progress.streakDays,
-        badges: progress.badges,
-        totalTimeSpent: progress.totalTimeSpent
-      }
-    });
+    const db = await getDb();
+    const [progress, totalLessons] = await Promise.all([
+      db.collection<LearningProgress>('education_progress').findOne({ userId: req.user!.id }),
+      db.collection('lessons').countDocuments(),
+    ]);
+    const scores = Object.values(progress?.quizScores || {});
+    return res.json({ success: true, stats: {
+      totalLessons,
+      completedLessons: progress?.completedLessons.length || 0,
+      currentLevel: progress?.currentLevel || 'beginner',
+      averageQuizScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
+      streakDays: progress?.streakDays || 0, badges: progress?.badges || [], totalTimeSpent: progress?.totalTimeSpent || 0,
+    } });
   } catch (error) {
-    console.error('Error fetching stats:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch stats'
-    });
+    logger.error('Error fetching education stats:', error);
+    return res.status(503).json({ success: false, error: 'Learning statistics are temporarily unavailable' });
   }
 });
 
-// POST /api/education/seed - Re-seed lessons database with all 30 expanded lessons
-router.post('/seed', authenticateToken, async (req: AuthRequest, res: Response) => {
+// Curriculum changes are administrator operations, never available to student accounts.
+router.post('/seed', authenticateToken, requireRole(['admin']), async (_req, res: Response) => {
   try {
-    const mongoDb = await getDb();
-    const beginnerLessons = require('../../../../database/mongodb/seeds/beginner-lessons');
-    const intermediateLessons = require('../../../../database/mongodb/seeds/intermediate-lessons');
-    const expertLessons = require('../../../../database/mongodb/seeds/expert-lessons');
-    
-    const allLessons = [...beginnerLessons, ...intermediateLessons, ...expertLessons];
-    const lessonsColl = mongoDb.collection('lessons');
-
-    let totalWords = 0;
-    for (const lesson of allLessons) {
-      const wordCount = lesson.content ? lesson.content.split(/\s+/).filter(Boolean).length : 0;
-      totalWords += wordCount;
-
-      await lessonsColl.updateOne(
-        { lessonId: lesson.lessonId },
-        {
-          $set: {
-            lessonId: lesson.lessonId,
-            level: lesson.level,
-            order: lesson.order,
-            title: lesson.title,
-            duration: lesson.duration,
-            content: lesson.content,
-            quiz: lesson.quiz,
-            updatedAt: new Date()
-          }
-        },
-        { upsert: true }
-      );
+    const db = await getDb();
+    const beginner = require('../../../../database/mongodb/seeds/beginner-lessons');
+    const intermediate = require('../../../../database/mongodb/seeds/intermediate-lessons');
+    const expert = require('../../../../database/mongodb/seeds/expert-lessons');
+    const lessons = [...beginner, ...intermediate, ...expert];
+    for (const lesson of lessons) {
+      await db.collection('lessons').updateOne({ lessonId: lesson.lessonId }, { $set: {
+        lessonId: lesson.lessonId, level: lesson.level, order: lesson.order,
+        title: lesson.title, duration: lesson.duration, content: lesson.content, quiz: lesson.quiz, updatedAt: new Date(),
+      } }, { upsert: true });
     }
-
-    res.json({
-      success: true,
-      message: `Successfully seeded ${allLessons.length} lessons into MongoDB`,
-      totalLessons: allLessons.length,
-      totalWords,
-      averageWordsPerLesson: Math.round(totalWords / allLessons.length)
-    });
-  } catch (error: any) {
-    console.error('Error seeding lessons via API:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to seed lessons'
-    });
+    return res.json({ success: true, totalLessons: lessons.length });
+  } catch (error) {
+    logger.error('Error seeding lessons:', error);
+    return res.status(500).json({ success: false, error: 'Unable to update the curriculum' });
   }
 });
 
 export default router;
-

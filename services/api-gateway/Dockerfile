@@ -1,4 +1,4 @@
-FROM node:18-alpine AS development
+FROM node:22-alpine AS development
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ EXPOSE 3000
 
 CMD ["npm", "run", "dev"]
 
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ COPY package*.json ./
 COPY tsconfig.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source
 COPY src ./src
@@ -34,7 +34,7 @@ COPY src ./src
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine
+FROM node:22-alpine AS production
 
 WORKDIR /app
 
@@ -42,7 +42,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm install --production
+RUN npm ci --omit=dev
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
@@ -59,3 +59,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Run
 CMD ["node", "dist/server.js"]
+
+FROM production AS cloudrun
+RUN apk add --no-cache curl
+COPY cloudrun-entrypoint.sh /app/cloudrun-entrypoint.sh
+ENTRYPOINT ["/bin/sh", "/app/cloudrun-entrypoint.sh"]

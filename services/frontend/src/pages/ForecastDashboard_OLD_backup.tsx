@@ -189,9 +189,6 @@ const ForecastDashboard: React.FC = () => {
     if (!forecast) return [];
 
     const { forecastData } = forecast;
-    const allDates = [...forecastData.historical_data.dates, ...forecastData.dates];
-    const splitIndex = forecastData.historical_data.dates.length;
-
     return [
       // Historical data
       {

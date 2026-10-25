@@ -50,7 +50,7 @@ export default function Register() {
     setLoading(true)
 
     try {
-      const { confirmPassword, ...submitData } = formData
+      const { confirmPassword: _confirmPassword, ...submitData } = formData
       const response = await api.post('/auth/register', submitData)
       setAuth(response.data.user, response.data.token)
       navigate('/dashboard')

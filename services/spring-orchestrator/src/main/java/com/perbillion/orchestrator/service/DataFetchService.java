@@ -5,11 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,6 +24,10 @@ public class DataFetchService {
     private final WebClient.Builder webClientBuilder;
     
     private static final String ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co";
+    private static final long SERIES_CACHE_SECONDS = 24 * 60 * 60;
+    private static final int SERIES_CACHE_MAX_TICKERS = 100;
+    private record CachedSeries(Instant expiresAt, List<List<Object>> points) {}
+    private final Map<String, CachedSeries> weeklySeriesCache = new ConcurrentHashMap<>();
 
     /**
      * Fetch historical stock data from Alpha Vantage
@@ -35,7 +40,13 @@ public class DataFetchService {
      */
     public List<List<Object>> fetchHistoricalData(String ticker, LocalDate startDate, LocalDate endDate) {
         log.info("Fetching historical data for {} from {} to {}", ticker, startDate, endDate);
-        
+        String symbol = ticker.toUpperCase(Locale.ROOT);
+        CachedSeries cached = weeklySeriesCache.get(symbol);
+        if (cached != null && cached.expiresAt().isAfter(Instant.now())) {
+            log.info("Using cached weekly series for {}", symbol);
+            return withinRange(cached.points(), startDate, endDate);
+        }
+
         try {
             WebClient webClient = webClientBuilder.baseUrl(ALPHA_VANTAGE_BASE_URL).build();
             
@@ -44,7 +55,7 @@ public class DataFetchService {
                 .uri(uriBuilder -> uriBuilder
                     .path("/query")
                     .queryParam("function", "TIME_SERIES_WEEKLY_ADJUSTED")
-                    .queryParam("symbol", ticker)
+                    .queryParam("symbol", symbol)
                     .queryParam("apikey", alphaVantageApiKey)
                     .build())
                 .retrieve()
@@ -64,28 +75,34 @@ public class DataFetchService {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
             for (Map.Entry<String, Map<String, String>> entry : timeSeries.entrySet()) {
-                LocalDate date = LocalDate.parse(entry.getKey(), formatter);
-                
-                // Filter by date range
-                if ((startDate == null || !date.isBefore(startDate)) && 
-                    (endDate == null || !date.isAfter(endDate))) {
-                    
-                    // Use adjusted close price
-                    double price = Double.parseDouble(entry.getValue().get("5. adjusted close"));
-                    dataPoints.add(Arrays.asList(entry.getKey(), price));
-                }
+                // Parse the full weekly series once, then apply each forecast's date range.
+                LocalDate.parse(entry.getKey(), formatter);
+                double price = Double.parseDouble(entry.getValue().get("5. adjusted close"));
+                dataPoints.add(Arrays.asList(entry.getKey(), price));
             }
 
             // Sort by date ascending (oldest first)
             dataPoints.sort(Comparator.comparing(list -> (String) list.get(0)));
 
-            log.info("Successfully fetched {} data points for {}", dataPoints.size(), ticker);
-            return dataPoints;
+            if (!dataPoints.isEmpty()) {
+                if (weeklySeriesCache.size() >= SERIES_CACHE_MAX_TICKERS) weeklySeriesCache.clear();
+                weeklySeriesCache.put(symbol, new CachedSeries(Instant.now().plusSeconds(SERIES_CACHE_SECONDS), dataPoints));
+            }
+            log.info("Successfully fetched {} data points for {}", dataPoints.size(), symbol);
+            return withinRange(dataPoints, startDate, endDate);
 
         } catch (Exception e) {
             log.error("Error fetching data from Alpha Vantage for ticker {}: {}", ticker, e.getMessage());
             throw new RuntimeException("Failed to fetch historical data for " + ticker, e);
         }
+    }
+
+    private List<List<Object>> withinRange(List<List<Object>> points, LocalDate startDate, LocalDate endDate) {
+        return points.stream().filter(point -> {
+            LocalDate date = LocalDate.parse((String) point.get(0));
+            return (startDate == null || !date.isBefore(startDate)) &&
+                   (endDate == null || !date.isAfter(endDate));
+        }).collect(Collectors.toList());
     }
 
     /**

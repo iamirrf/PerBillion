@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 export const PerBillionForecastWidget: React.FC = () => {
   const [ticker, setTicker] = useState<'AAPL' | 'NVDA' | 'TSLA' | 'MSFT'>('NVDA');
   const [modelType, setModelType] = useState<'SARIMAX' | 'HOLT_WINTERS' | 'ARIMA'>('SARIMAX');
-  const [horizonDays, setHorizonDays] = useState<number>(14);
+  const horizonDays = 14;
 
   // Preset ticker data
   const basePrices: Record<string, number> = {

@@ -5,6 +5,9 @@ import logger from '../utils/logger';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { GridFSBucket } from 'mongodb';
+import { Readable } from 'stream';
+import { randomUUID } from 'crypto';
 
 const router = Router();
 
@@ -25,18 +28,20 @@ const storage = multer.diskStorage({
   },
 });
 
+const persistUploadsInMongo = process.env.PERSIST_UPLOADS_IN_MONGO === 'true';
 const upload = multer({
-  storage,
+  storage: persistUploadsInMongo ? multer.memoryStorage() : storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb: any) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    const extensions: Record<string, string[]> = {
+      'image/jpeg': ['.jpeg', '.jpg'], 'image/png': ['.png'], 'image/gif': ['.gif'], 'image/webp': ['.webp'],
+    };
+    const extname = extensions[file.mimetype]?.includes(path.extname(file.originalname).toLowerCase());
     
-    if (extname && mimetype) {
+    if (extname) {
       return cb(null, true);
     }
-    cb(new Error('Only image files are allowed!'));
+    cb(Object.assign(new Error('Choose a JPEG, PNG, GIF, or WebP image'), { status: 400 }));
   },
 });
 
@@ -77,6 +82,11 @@ router.put('/profile', async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
     const { username, fullName } = req.body;
 
+    if ((username !== undefined && username !== null && (typeof username !== 'string' || !/^[a-zA-Z0-9_]{3,30}$/.test(username))) ||
+        (fullName !== undefined && (typeof fullName !== 'string' || !fullName.trim() || fullName.trim().length > 100))) {
+      return res.status(400).json({ error: 'Enter a valid name and a username of 3–30 letters, numbers, or underscores' });
+    }
+
     const database = await getDb();
     const { users } = getCollections(database);
 
@@ -93,15 +103,16 @@ router.put('/profile', async (req: AuthRequest, res: Response) => {
     }
 
     const updateData: any = { updatedAt: new Date() };
-    if (username !== undefined) updateData.username = username;
-    if (fullName !== undefined) updateData.fullName = fullName;
+    if (username !== undefined && username !== null) updateData.username = username;
+    if (fullName !== undefined) updateData.fullName = fullName.trim();
 
     await users.updateOne(
       { _id: userId },
-      { $set: updateData }
+      { $set: updateData, ...(username === null ? { $unset: { username: '' } } : {}) }
     );
 
     const updatedUser = await users.findOne({ _id: userId });
+    if (!updatedUser) return res.status(404).json({ error: 'User not found' });
 
     res.json({
       id: String(updatedUser!._id),
@@ -111,8 +122,9 @@ router.put('/profile', async (req: AuthRequest, res: Response) => {
       profilePicture: updatedUser!.profilePicture,
       role: updatedUser!.role,
     });
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Profile update error:', error);
+    if (error?.code === 11000) return res.status(409).json({ error: 'Username already taken' });
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
@@ -129,22 +141,34 @@ router.post('/profile-picture', upload.single('profilePicture'), async (req: Aut
     const database = await getDb();
     const { users } = getCollections(database);
 
-    // Get old profile picture to delete it
     const user = await users.findOne({ _id: userId });
-    if (user?.profilePicture) {
-      const oldPath = path.join(__dirname, '../../uploads/profiles', path.basename(user.profilePicture));
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
-      }
+    let filename = req.file.filename;
+    if (persistUploadsInMongo) {
+      filename = `${userId}-${Date.now()}-${randomUUID()}${path.extname(req.file.originalname).toLowerCase()}`;
+      const bucket = new GridFSBucket(database, { bucketName: 'profile_images' });
+      const stream = bucket.openUploadStream(filename, { metadata: { contentType: req.file.mimetype } });
+      await new Promise<void>((resolve, reject) => {
+        Readable.from([req.file!.buffer]).pipe(stream).on('finish', resolve).on('error', reject);
+      });
     }
-
-    // Store relative path
-    const profilePicturePath = `/uploads/profiles/${req.file.filename}`;
+    const profilePicturePath = `/uploads/profiles/${filename}`;
 
     await users.updateOne(
       { _id: userId },
       { $set: { profilePicture: profilePicturePath, updatedAt: new Date() } }
     );
+
+    if (user?.profilePicture?.startsWith('/uploads/profiles/')) {
+      const oldFilename = path.basename(user.profilePicture);
+      if (persistUploadsInMongo) {
+        const bucket = new GridFSBucket(database, { bucketName: 'profile_images' });
+        const oldFiles = await bucket.find({ filename: oldFilename }).toArray();
+        await Promise.all(oldFiles.map(file => bucket.delete(file._id)));
+      } else {
+        const oldPath = path.join(__dirname, '../../uploads/profiles', oldFilename);
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+    }
 
     res.json({ 
       profilePicture: profilePicturePath,
@@ -184,6 +208,19 @@ router.put('/preferences', async (req: AuthRequest, res: Response) => {
       theme,
     } = req.body;
 
+    if ((defaultTicker !== undefined && (typeof defaultTicker !== 'string' || !/^[A-Z]{1,5}$/.test(defaultTicker))) ||
+        (defaultForecastHorizon !== undefined && (!Number.isInteger(defaultForecastHorizon) || defaultForecastHorizon < 1 || defaultForecastHorizon > 52)) ||
+        (advancedModeEnabled !== undefined && typeof advancedModeEnabled !== 'boolean') ||
+        (preferredModel !== undefined && !['auto', 'ARIMA', 'SARIMA', 'SARIMAX', 'HOLT_WINTERS_ADDITIVE', 'HOLT_WINTERS_MULTIPLICATIVE', 'HOLT_WINTERS_DAMPED'].includes(preferredModel)) ||
+        (theme !== undefined && !['dark', 'light', 'system', 'black-gold'].includes(theme))) {
+      return res.status(400).json({ error: 'Invalid preferences' });
+    }
+
+    const updates: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries({ defaultTicker, defaultForecastHorizon, advancedModeEnabled, preferredModel, theme })) {
+      if (value !== undefined) updates[key] = value;
+    }
+
     const database = await getDb();
     const { userPreferences } = getCollections(database);
     const now = new Date();
@@ -192,11 +229,7 @@ router.put('/preferences', async (req: AuthRequest, res: Response) => {
       { userId },
       {
         $set: {
-          defaultTicker,
-          defaultForecastHorizon,
-          advancedModeEnabled,
-          preferredModel,
-          theme,
+          ...updates,
           updatedAt: now,
         },
         $setOnInsert: {

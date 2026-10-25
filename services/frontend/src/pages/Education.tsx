@@ -25,7 +25,7 @@ export const Education: React.FC = () => {
   useEffect(() => {
     fetchProgress();
     fetchLessons();
-  }, []); // Empty deps - functions are now stable
+  }, [fetchProgress, fetchLessons]);
 
   useEffect(() => {
     if (progress) {

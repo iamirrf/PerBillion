@@ -3,6 +3,7 @@ import logger from './logger';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
+let connection: Promise<MongoClient> | null = null;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -14,9 +15,11 @@ function requireEnv(name: string): string {
 
 export async function getMongoClient(): Promise<MongoClient> {
   if (client) return client;
-
+  if (connection) return connection;
   const uri = requireEnv('MONGODB_URI');
-  client = new MongoClient(uri, {
+  const candidate = new MongoClient(uri, {
+    serverSelectionTimeoutMS: 5000,
+    connectTimeoutMS: 5000,
     serverApi: {
       version: ServerApiVersion.v1,
       strict: true,
@@ -24,15 +27,21 @@ export async function getMongoClient(): Promise<MongoClient> {
     },
   });
 
-  await client.connect();
-  logger.info('Connected to MongoDB');
-  return client;
+  connection = candidate.connect().then(() => {
+    client = candidate;
+    logger.info('Connected to MongoDB');
+    return candidate;
+  }).catch(async (error) => {
+    await candidate.close().catch(() => undefined);
+    throw error;
+  }).finally(() => { connection = null; });
+  return connection;
 }
 
 export async function getDb(): Promise<Db> {
   if (db) return db;
-  const mongoClient = await getMongoClient();
   const databaseName = requireEnv('MONGODB_DATABASE');
+  const mongoClient = await getMongoClient();
   db = mongoClient.db(databaseName);
   return db;
 }
