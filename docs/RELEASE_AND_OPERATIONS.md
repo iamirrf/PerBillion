@@ -14,6 +14,8 @@ Updated 2026-10-25. The public pilot is deployed at **https://perbillion-7058253
 
 The deployment uses services eligible for Google's Always Free allowances, with one Cloud Run instance at most, no minimum instances, a 30 GB standard persistent disk, private VM networking, and five accepted live forecasts per day for the whole deployment. These choices reduce cost but **do not guarantee a zero bill**. Free quotas are shared across projects on the billing account, and public traffic or egress beyond them is billed. Google billing alerts do not automatically stop all usage. Check the project's billing reports regularly and disable public traffic if a strict zero-dollar requirement becomes binding.
 
+A project-scoped monthly $1 billing alert, `PerBillion free-tier watch`, is configured at 50% and 100% of that amount. It is an alert, not a hard spend cap.
+
 | Item | Planning basis | Estimated monthly cost |
 | --- | --- | ---: |
 | MongoDB VM and disk | [One `e2-micro` in `us-central1` and 30 GB-months of standard persistent disk are Always Free eligible](https://docs.cloud.google.com/free/docs/free-cloud-features). This is a 1 GB RAM pilot database, with limited capacity. | $0 within the shared allowance |
