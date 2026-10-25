@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Sitemap: https://perbillion-705825363504.us-central1.run.app/sitemap.xml

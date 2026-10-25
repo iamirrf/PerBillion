@@ -32,6 +32,7 @@ api.interceptors.response.use(
   (error) => {
     const isAuthRequest = /\/auth\/(login|register)/.test(error.config?.url || '')
     if (error.response?.status === 401 && !isAuthRequest && error.config?.headers?.Authorization) {
+      try { sessionStorage.setItem('perbillion-session-expired', 'true') } catch { /* Login still opens when storage is unavailable. */ }
       useAuthStore.getState().logout()
     }
     return Promise.reject(error)

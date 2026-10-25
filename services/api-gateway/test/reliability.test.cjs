@@ -6,6 +6,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const progress = require('../dist/utils/educationProgress');
+const product = require('../dist/routes/product');
 const db = require('../dist/utils/db');
 const lesson = { _id: 'lesson-db-id', lessonId: 'beginner-1', level: 'beginner', order: 1, title: 'Markets', quiz: [{ question: 'What?' }] };
 let saved = { ...progress.initialProgress('learner'), _id: 'immutable-mongo-id' };
@@ -44,13 +45,14 @@ const request = (path, body, auth = true) => fetch(origin + path, {
   method: 'POST', headers: auth ? headers : { 'content-type': 'application/json' }, body: JSON.stringify(body),
 });
 
-test('free lesson reads and authenticated progress have separate access rules', async () => {
-  const lessons = await fetch(origin + '/education/lessons');
+test('lesson reads and progress require an authenticated account', async () => {
+  assert.equal((await fetch(origin + '/education/lessons')).status, 401);
+  const lessons = await fetch(origin + '/education/lessons', { headers });
   assert.equal(lessons.status, 200);
   assert.equal((await lessons.json()).lessons[0].quizLength, 1);
   assert.equal((await fetch(origin + '/education/progress')).status, 401);
   assert.equal((await request('/education/seed', {})).status, 403);
-  assert.equal((await fetch(origin + '/education/lessons?level=invalid')).status, 400);
+  assert.equal((await fetch(origin + '/education/lessons?level=invalid', { headers })).status, 400);
 });
 
 test('completion rejects malformed data and unknown lessons without corrupting progress', async () => {
@@ -90,7 +92,13 @@ test('streaks follow completion dates across DST and ignore page access dates', 
   assert.equal(state.streakDays, 1);
 });
 
-test('forecast validates horizon and associates authenticated activity; guests remain supported', async () => {
+test('practice scenario prices are deterministic and scenario-specific', () => {
+  assert.equal(product.priceCents('CORE', 'steady-growth', 12), product.priceCents('CORE', 'steady-growth', 12));
+  assert.notEqual(product.priceCents('NOVA', 'steady-growth', 20), product.priceCents('NOVA', 'rate-shock', 20));
+  assert.ok(product.priceCents('BOND', 'selloff-recovery', 60) > 0);
+});
+
+test('forecast validates horizon, requires auth, and associates account ownership', async () => {
   assert.equal((await request('/forecast/generate', { ticker: ['AAPL'] })).status, 400);
   assert.equal((await request('/forecast/generate', { ticker: 'AAPL', forecastMonths: 53 })).status, 400);
   const response = await request('/forecast/generate', { ticker: 'aapl', forecastMonths: 12, modelType: 'auto' });
@@ -98,9 +106,8 @@ test('forecast validates horizon and associates authenticated activity; guests r
   assert.equal(lastForecast.userId, 'learner');
   assert.equal(lastForecast.ticker, 'AAPL');
   const guest = await request('/forecast/generate', { ticker: 'MSFT' }, false);
-  assert.equal(guest.status, 200);
-  assert.equal(lastForecast.userId, 'anonymous');
-  assert.equal((await fetch(origin + '/forecast/history?limit=-1')).status, 400);
+  assert.equal(guest.status, 401);
+  assert.equal((await fetch(origin + '/forecast/history?limit=-1', { headers })).status, 400);
 });
 
 test('auth rejects object credentials and invalid signatures without redirecting public content', async () => {

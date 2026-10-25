@@ -93,12 +93,15 @@ public class ForecastController {
     @Operation(summary = "Get user forecasts", description = "Retrieves all forecasts for a specific user")
     public ResponseEntity<?> getUserForecasts(
             @PathVariable UUID userId,
+            @RequestParam(required = false) String ticker,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         
         log.info("Retrieving forecasts for user: {}", userId);
         
-        var forecasts = orchestrationService.getUserForecasts(userId, page, size);
+        var forecasts = ticker == null || ticker.isBlank()
+            ? orchestrationService.getUserForecasts(userId, page, size)
+            : orchestrationService.getUserForecasts(userId, ticker, page, size);
         
         return ResponseEntity.ok(forecasts);
     }

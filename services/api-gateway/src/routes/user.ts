@@ -206,18 +206,24 @@ router.put('/preferences', async (req: AuthRequest, res: Response) => {
       advancedModeEnabled,
       preferredModel,
       theme,
+      learningGoal,
+      experienceLevel,
+      onboardingComplete,
     } = req.body;
 
     if ((defaultTicker !== undefined && (typeof defaultTicker !== 'string' || !/^[A-Z]{1,5}$/.test(defaultTicker))) ||
         (defaultForecastHorizon !== undefined && (!Number.isInteger(defaultForecastHorizon) || defaultForecastHorizon < 1 || defaultForecastHorizon > 52)) ||
         (advancedModeEnabled !== undefined && typeof advancedModeEnabled !== 'boolean') ||
         (preferredModel !== undefined && !['auto', 'ARIMA', 'SARIMA', 'SARIMAX', 'HOLT_WINTERS_ADDITIVE', 'HOLT_WINTERS_MULTIPLICATIVE', 'HOLT_WINTERS_DAMPED'].includes(preferredModel)) ||
-        (theme !== undefined && !['dark', 'light', 'system', 'black-gold'].includes(theme))) {
+        (theme !== undefined && !['dark', 'light', 'system', 'black-gold'].includes(theme)) ||
+        (learningGoal !== undefined && !['start', 'portfolio', 'quant'].includes(learningGoal)) ||
+        (experienceLevel !== undefined && !['new', 'some', 'experienced'].includes(experienceLevel)) ||
+        (onboardingComplete !== undefined && typeof onboardingComplete !== 'boolean')) {
       return res.status(400).json({ error: 'Invalid preferences' });
     }
 
     const updates: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries({ defaultTicker, defaultForecastHorizon, advancedModeEnabled, preferredModel, theme })) {
+    for (const [key, value] of Object.entries({ defaultTicker, defaultForecastHorizon, advancedModeEnabled, preferredModel, theme, learningGoal, experienceLevel, onboardingComplete })) {
       if (value !== undefined) updates[key] = value;
     }
 

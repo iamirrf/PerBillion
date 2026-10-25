@@ -1,8 +1,8 @@
 # PerBillion
 
-PerBillion is a free investing education experience built from a React frontend, an Express API gateway, a Spring Boot orchestration service, a Python statsmodels ML engine, MongoDB, and Nginx. The current path has 24 interactive lessons, a growth simulator, synthetic paper trading, and a bounded statistical forecast studio. Accounts are optional.
+PerBillion is a free, account-based investing learning and practice platform built from a React frontend, an Express API gateway, a Spring Boot orchestration service, a Python statsmodels ML engine, MongoDB, and Nginx. The public website explains the product; the signed-in application connects 24 interactive lessons and 48 explained questions with goal-based recommendations, server-authoritative portfolio simulations, and bounded weekly forecast research.
 
-The current codebase includes local and production Compose definitions. See [release and operations](docs/RELEASE_AND_OPERATIONS.md) for deployment inputs, cost assumptions, service verification, and rollback. Production deployment still requires rotated secrets, a licensed market-data feed, TLS, monitoring, backups, and infrastructure review. No live host is confirmed.
+The current codebase includes local and production Compose definitions. See [release and operations](docs/RELEASE_AND_OPERATIONS.md) for deployment inputs, cost assumptions, service verification, and rollback. The release is hosted at `https://perbillion-705825363504.us-central1.run.app/`; the custom domain remains a separate DNS dependency.
 
 ## Implemented Forecast Models
 
@@ -113,6 +113,7 @@ API gateway:
 - `GET /api/user/preferences`
 - `PUT /api/user/preferences`
 - `POST /api/forecast/generate`
+- `POST /api/forecast/:forecastId/rerun`
 - `GET /api/forecast/history`
 - `GET /api/forecast/:forecastId`
 - `GET /api/education/lessons`
@@ -123,6 +124,10 @@ API gateway:
 - `GET /api/education/v2/progress`
 - `PUT /api/education/v2/progress/:lessonId`
 - `DELETE /api/education/v2/progress`
+- `GET /api/product/practice`
+- `POST /api/product/practice/actions`
+- `GET|PUT|DELETE /api/product/watchlist[/:ticker]`
+- `GET|POST /api/product/comparisons`
 
 Spring orchestrator, 6 handlers:
 
@@ -147,13 +152,14 @@ Implemented:
 
 - JWT signing and verification with required `JWT_SECRET`
 - bcrypt password hashing for registration/login
-- authentication middleware on user and education routes
+- authentication middleware on every product, learning, and forecast route
+- owner-scoped forecast history, individual results, practice sessions, watchlists, and comparisons
+- atomic practice actions with revision checks and idempotency keys
 - global API rate limiting, auth rate limiting, and forecast generation rate limiting
 - Helmet, CORS, request size limits, and basic input validation
 
 Current limitations:
 
-- Forecast gateway routes currently allow anonymous requests and use `anonymous` as the user ID when no token is present.
 - Role helper code exists, but no role-gated route is currently wired.
 - CSRF protection is not implemented.
 - Production CORS, TLS, logging, backup, and secret-management settings must be reviewed per environment.
@@ -162,6 +168,7 @@ Current limitations:
 
 ```bash
 curl -X POST http://localhost/api/forecast/generate \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "ticker": "AAPL",

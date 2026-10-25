@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 public interface ForecastRepository extends MongoRepository<Forecast, String> {
     
     Page<Forecast> findByUserIdOrderByCreatedAtDesc(String userId, Pageable pageable);
+    Page<Forecast> findByUserIdAndTickerOrderByCreatedAtDesc(String userId, String ticker, Pageable pageable);
     
     Page<Forecast> findByTickerOrderByCreatedAtDesc(String ticker, Pageable pageable);
     

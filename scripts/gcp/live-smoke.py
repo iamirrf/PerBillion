@@ -36,8 +36,8 @@ def request(path, method='GET', body=None, token=None):
 status, health = request('/api/health')
 assert status == 200 and health['status'] == 'healthy'
 assert all(check['status'] == 'healthy' for check in health['checks'].values())
-status, lessons = request('/api/education/lessons')
-assert status == 200 and len(lessons['lessons']) == 30
+status, _ = request('/api/education/lessons')
+assert status == 401
 status, html = request('/education?lesson=money-to-investing')
 assert status == 200 and b'PerBillion' in html
 print('Live services, prior coursework, and lesson route: OK')
@@ -49,6 +49,8 @@ status, account = request('/api/auth/register', 'POST', {
 })
 assert status == 201 and account.get('token'), (status, account)
 token = account['token']
+status, lessons = request('/api/education/lessons', token=token)
+assert status == 200 and len(lessons['lessons']) == 30
 status, login = request('/api/auth/login', 'POST', {'email': email, 'password': password})
 assert status == 200 and login.get('token'), (status, login)
 
@@ -61,13 +63,45 @@ for score in (80, 100, 70):
     assert status == 200 and saved['completion']['score'] == best
 status, progress = request('/api/education/v2/progress', token=token)
 assert status == 200 and progress['completed']['money-to-investing']['score'] == 100
+status, exercise = request('/api/education/v2/exercises/money-to-investing', 'PUT', token=token)
+assert status == 200 and exercise['completion']['completedAt']
+status, exercises = request('/api/education/v2/exercises', token=token)
+assert status == 200 and 'money-to-investing' in exercises['completed']
 status, _ = request('/api/education/v2/progress', 'DELETE', token=token)
 assert status == 200
 status, progress = request('/api/education/v2/progress', token=token)
 assert status == 200 and progress['completed'] == {}
+status, exercises = request('/api/education/v2/exercises', token=token)
+assert status == 200 and exercises['completed'] == {}
 status, _ = request('/api/education/v2/progress/money-to-investing', 'PUT', {'score': 90}, token)
 assert status == 200
-print('Live registration, login, progress merge, and reset: OK')
+print('Live registration, login, quiz scores, exercises, and scoped reset: OK')
+
+status, practice = request('/api/product/practice?scenario=steady-growth', token=token)
+assert status == 200 and practice['cashCents'] == 1_000_000 and practice['revision'] == 0
+request_id = str(uuid.uuid4())
+order = {
+    'scenarioId': 'steady-growth', 'action': 'trade', 'side': 'buy',
+    'assetId': 'CORE', 'quantity': 2, 'expectedRevision': 0, 'requestId': request_id,
+}
+status, bought = request('/api/product/practice/actions', 'POST', order, token)
+assert status == 200 and bought['revision'] == 1 and bought['positions'][0]['quantity'] == 2
+status, duplicate = request('/api/product/practice/actions', 'POST', order, token)
+assert status == 200 and duplicate['revision'] == 1 and len(duplicate['trades']) == 1
+status, _ = request('/api/product/watchlist/AAPL', 'PUT', token=token)
+assert status == 200
+status, watchlist = request('/api/product/watchlist', token=token)
+assert status == 200 and watchlist['tickers'] == ['AAPL']
+second_email = f'perbillion-isolation-{uuid.uuid4().hex[:12]}@example.org'
+status, second = request('/api/auth/register', 'POST', {
+    'email': second_email, 'password': secrets.token_urlsafe(24), 'fullName': 'Isolation Smoke'
+})
+assert status == 201 and second.get('token')
+status, isolated_practice = request('/api/product/practice?scenario=steady-growth', token=second['token'])
+assert status == 200 and isolated_practice['revision'] == 0 and isolated_practice['positions'] == []
+status, isolated_watchlist = request('/api/product/watchlist', token=second['token'])
+assert status == 200 and isolated_watchlist['tickers'] == []
+print('Live account-scoped practice, watchlists, and account isolation: OK')
 
 png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZbH0AAAAASUVORK5CYII=')
 boundary = 'perbillion-live-smoke'
@@ -85,7 +119,7 @@ status, image = request(avatar_path)
 assert status == 200 and image == png
 print('Live profile image persistence path: OK')
 
-status, invalid = request('/api/forecast/generate', 'POST', {'ticker': 'AAPL', 'forecastMonths': 0})
+status, invalid = request('/api/forecast/generate', 'POST', {'ticker': 'AAPL', 'forecastMonths': 0}, token)
 assert status == 400 and 'weeks' in invalid['message']
 
 receipt = {'email': email, 'userId': account['user']['id'], 'token': token, 'avatarPath': avatar_path}

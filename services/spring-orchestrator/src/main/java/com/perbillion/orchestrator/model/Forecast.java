@@ -31,6 +31,9 @@ public class Forecast {
 
     private Map<String, Object> parameters;
 
+    @Field("request_metadata")
+    private Map<String, Object> requestMetadata;
+
     @Field("forecast_data")
     private Map<String, Object> forecastData;
 

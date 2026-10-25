@@ -9,6 +9,7 @@ const router = Router();
 const levels = ['beginner', 'intermediate', 'expert'];
 const currentLessonIds = new Set(curriculumV2Ids);
 let currentProgressIndex: Promise<string> | undefined;
+let exerciseProgressIndex: Promise<string> | undefined;
 
 async function v2Collection() {
   const collection = (await getDb()).collection<{
@@ -20,6 +21,18 @@ async function v2Collection() {
       .catch(error => { currentProgressIndex = undefined; throw error; });
   }
   await currentProgressIndex;
+  return collection;
+}
+
+async function v2ExerciseCollection() {
+  const collection = (await getDb()).collection<{
+    userId: string; lessonId: string; completedAt: Date;
+  }>('education_exercises_v2');
+  if (!exerciseProgressIndex) {
+    exerciseProgressIndex = collection.createIndex({ userId: 1, lessonId: 1 }, { unique: true })
+      .catch(error => { exerciseProgressIndex = undefined; throw error; });
+  }
+  await exerciseProgressIndex;
   return collection;
 }
 
@@ -63,9 +76,41 @@ router.put('/v2/progress/:lessonId', authenticateToken, async (req: AuthRequest,
   }
 });
 
+router.get('/v2/exercises', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const rows = await (await v2ExerciseCollection()).find({ userId: req.user!.id }).toArray();
+    const completed: Record<string, Date> = {};
+    for (const row of rows) if (currentLessonIds.has(row.lessonId)) completed[row.lessonId] = row.completedAt;
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, completed });
+  } catch (error) {
+    logger.error('Error fetching lesson exercise progress:', error);
+    return res.status(503).json({ success: false, error: 'Exercise progress is temporarily unavailable' });
+  }
+});
+
+router.put('/v2/exercises/:lessonId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const { lessonId } = req.params;
+  if (!currentLessonIds.has(lessonId)) return res.status(400).json({ success: false, error: 'Choose a current lesson' });
+  try {
+    const row = await (await v2ExerciseCollection()).findOneAndUpdate(
+      { userId: req.user!.id, lessonId },
+      { $setOnInsert: { userId: req.user!.id, lessonId, completedAt: new Date() } },
+      { upsert: true, returnDocument: 'after' },
+    );
+    if (!row) throw new Error('Exercise progress update returned no document');
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, completion: { completedAt: row.completedAt } });
+  } catch (error) {
+    logger.error('Error saving lesson exercise progress:', error);
+    return res.status(503).json({ success: false, error: 'Unable to save exercise progress. Please try again.' });
+  }
+});
+
 router.delete('/v2/progress', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    await (await v2Collection()).deleteMany({ userId: req.user!.id });
+    const [progress, exercises] = await Promise.all([v2Collection(), v2ExerciseCollection()]);
+    await Promise.all([progress.deleteMany({ userId: req.user!.id }), exercises.deleteMany({ userId: req.user!.id })]);
     res.set('Cache-Control', 'no-store');
     return res.json({ success: true, completed: {} });
   } catch (error) {
@@ -74,8 +119,8 @@ router.delete('/v2/progress', authenticateToken, async (req: AuthRequest, res: R
   }
 });
 
-// Educational content is free to read without an account.
-router.get('/lessons', async (req, res: Response) => {
+// Product coursework is available after sign-in; the public site carries its own preview.
+router.get('/lessons', authenticateToken, async (req, res: Response) => {
   const { level } = req.query;
   if (level !== undefined && (typeof level !== 'string' || !levels.includes(level))) {
     return res.status(400).json({ success: false, error: 'Choose beginner, intermediate, or expert' });
@@ -95,7 +140,7 @@ router.get('/lessons', async (req, res: Response) => {
   }
 });
 
-router.get('/lessons/:lessonId', async (req, res: Response) => {
+router.get('/lessons/:lessonId', authenticateToken, async (req, res: Response) => {
   if (!validLessonId(req.params.lessonId)) return res.status(400).json({ success: false, error: 'Invalid lesson ID' });
   try {
     const db = await getDb();

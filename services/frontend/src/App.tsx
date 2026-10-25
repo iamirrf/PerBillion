@@ -1,75 +1,21 @@
-import { Component, type ReactNode, useEffect } from 'react'
+import { Component, lazy, Suspense, type ReactNode, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import Shell from './experience/Shell'
-import Overview from './experience/Overview'
-import Learn from './experience/Learn'
-import Lab from './experience/Lab'
-import Progress from './experience/Progress'
-import { Login, Register, Profile } from './experience/Account'
 import { useAuthStore } from './store/authStore'
 import { useLearningStore } from './experience/learningStore'
 import { lessons } from './experience/curriculum'
-class ErrorBoundary extends Component<{children: ReactNode}, {failed: boolean}> {
-  state = { failed: false }
-  static getDerivedStateFromError() { return { failed: true } }
-  render() {
-    if (this.state.failed) return <div className="recovery"><span className="eyebrow">LET’S GET YOU BACK</span><h1>A fresh start.</h1><p>Your saved progress is still on this device.</p><button className="button button-gold" onClick={() => window.location.reload()}>Reload the experience</button></div>
-    return this.props.children
-  }
-}
-function RouteEffects() {
-  const { pathname, search } = useLocation()
-  useEffect(() => {
-    window.scrollTo({top:0,behavior:'instant' as ScrollBehavior})
-    const titles:Record<string,string>={'/':'Your investing journey','/home':'Your investing journey','/education':'The learning path','/forecast':'The practice lab','/quant':'AI & quantitative investing','/progress':'Your progress','/profile':'Your account','/login':'Welcome back','/register':'Create your account'}
-    const descriptions:Record<string,string>={
-      '/':'Learn investing from the beginning with interactive lessons, virtual trading, and quantitative research. Free at every level.',
-      '/home':'Learn investing from the beginning with interactive lessons, virtual trading, and quantitative research. Free at every level.',
-      '/education':'Follow 24 free, visual lessons from investing foundations through portfolios, trading, and quantitative research.',
-      '/forecast':'Explore compound growth and place virtual trades with synthetic prices. Practice without real money.',
-      '/quant':'Explore statistical forecasting and learn how quantitative researchers test ideas and handle uncertainty.',
-      '/progress':'Review your current curriculum progress and continue your free investing education.',
-      '/profile':'Manage your PerBillion account, learning progress, lab preferences, and data export.',
-      '/login':'Sign in to synchronize your free PerBillion learning progress across devices.',
-      '/register':'Create a free account to save your investing education progress across devices.',
-    }
-    const lessonId = pathname === '/education' ? new URLSearchParams(search).get('lesson') : null
-    const lesson = lessons.find(item => item.id === lessonId)
-    const title = `${lesson?.title || titles[pathname] || 'Explore'} · PerBillion`
-    const description = lesson ? `${lesson.description} A free visual investing lesson from PerBillion.` : descriptions[pathname] || descriptions['/']
-    document.title = title
-    for (const [selector, value] of [['meta[name="description"]', description], ['meta[property="og:title"]', title], ['meta[property="og:description"]', description], ['meta[name="twitter:title"]', title], ['meta[name="twitter:description"]', description], ['meta[property="og:image"]', new URL('/assets/gold-sculpture.webp', window.location.origin).href], ['meta[name="twitter:image"]', new URL('/assets/gold-sculpture.webp', window.location.origin).href]]) {
-      document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', value)
-    }
-  },[pathname, search])
-  return null
-}
-function LearningConnection() {
-  const accountId = useAuthStore(s => s.token ? s.user?.id || null : null)
-  const epoch = useLearningStore(s => s.syncEpoch)
-  const activate = useLearningStore(s => s.activateAccount)
-  const synchronize = useLearningStore(s => s.synchronize)
-  useEffect(() => { activate(accountId) }, [accountId, activate])
-  useEffect(() => { if (accountId) void synchronize() }, [accountId, epoch, synchronize])
-  useEffect(() => {
-    const retry = () => { if (useAuthStore.getState().token) void useLearningStore.getState().synchronize() }
-    window.addEventListener('online', retry)
-    return () => window.removeEventListener('online', retry)
-  }, [])
-  return null
-}
-export default function App() {
-  useEffect(()=>{
-    const apply=()=>{try{document.documentElement.dataset.reduceMotion=localStorage.getItem('perbillion-reduced-motion')==='true'?'true':'false'}catch{}}
-    apply();window.addEventListener('storage',apply);window.addEventListener('perbillion-motion',apply)
-    return()=>{window.removeEventListener('storage',apply);window.removeEventListener('perbillion-motion',apply)}
-  },[])
-  return <ErrorBoundary><BrowserRouter future={{v7_startTransition:true,v7_relativeSplatPath:true}}><LearningConnection/><RouteEffects/><Shell><Routes>
-    <Route path="/" element={<Overview/>}/><Route path="/home" element={<Overview/>}/>
-    <Route path="/dashboard" element={<Navigate to="/home" replace/>}/>
-    <Route path="/education" element={<Learn/>}/><Route path="/forecast" element={<Lab/>}/>
-    <Route path="/quant" element={<Lab quant/>}/><Route path="/progress" element={<Progress/>}/>
-    <Route path="/profile" element={<Profile/>}/><Route path="/login" element={<Login/>}/><Route path="/register" element={<Register/>}/>
-    <Route path="*" element={<div className="empty-page"><span className="eyebrow">404 · A SMALL DETOUR</span><h1>Find your next step.</h1><p className="muted">This page has moved. Your journey is right here.</p><a className="button button-gold" href="/education">Explore the learning path →</a></div>}/>
-  </Routes></Shell></BrowserRouter></ErrorBoundary>
-}
+import PublicSite from './experience/PublicSite'
+import Legal from './experience/Legal'
+
+const Shell=lazy(()=>import('./experience/Shell')),Overview=lazy(()=>import('./experience/Overview')),Learn=lazy(()=>import('./experience/Learn')),Practice=lazy(()=>import('./experience/Practice')),Research=lazy(()=>import('./experience/Research')),Progress=lazy(()=>import('./experience/Progress')),Onboarding=lazy(()=>import('./experience/Onboarding'))
+const Account=lazy(()=>import('./experience/Account').then(m=>({default:m.Profile}))),Login=lazy(()=>import('./experience/Account').then(m=>({default:m.Login}))),Register=lazy(()=>import('./experience/Account').then(m=>({default:m.Register})))
+class ErrorBoundary extends Component<{children:ReactNode},{failed:boolean}>{state={failed:false};static getDerivedStateFromError(){return{failed:true}}render(){return this.state.failed?<main className="recovery"><h1>Let’s get you back.</h1><p>Your account data is safe. Reload to reconnect.</p><button className="button primary" onClick={()=>location.reload()}>Reload PerBillion</button></main>:this.props.children}}
+function Loading(){return <div className="route-loading" role="status"><span/>Loading your workspace…</div>}
+function Guard({children}:{children:ReactNode}){const token=useAuthStore(s=>s.token),ready=useAuthStore(s=>s._hasHydrated),where=useLocation();if(!ready)return <Loading/>;return token?<>{children}</>:<Navigate replace to={`/login?returnTo=${encodeURIComponent(where.pathname+where.search)}`}/>}
+function Legacy(){const location=useLocation(),q=new URLSearchParams(location.search);let target='/app';if(location.pathname==='/education'){const id=q.get('lesson'),track=q.get('track');target=id&&lessons.some(item=>item.id===id)?`/app/learn/${id}`:track&&['foundations','portfolio','trading','quant'].includes(track)?`/app/learn?track=${track}`:'/app/learn'}else if(location.pathname==='/forecast'){const tool=q.get('tool')||q.get('tab');target=`/app/practice/${['growth','portfolio','scenarios'].includes(tool||'')?tool:'portfolio'}`}else if(location.pathname==='/quant'){const kept=new URLSearchParams();const ticker=q.get('ticker')?.toUpperCase(),horizon=Number(q.get('horizon')),model=q.get('model');if(ticker&&/^[A-Z]{1,5}$/.test(ticker))kept.set('ticker',ticker);if(Number.isInteger(horizon)&&horizon>=1&&horizon<=52)kept.set('horizon',String(horizon));if(model&&['auto','ARIMA','SARIMA','SARIMAX','HOLT_WINTERS_ADDITIVE','HOLT_WINTERS_MULTIPLICATIVE','HOLT_WINTERS_DAMPED'].includes(model))kept.set('model',model);target=`/app/research${kept.size?`?${kept}`:''}`}else if(location.pathname==='/progress')target='/app/progress';else if(location.pathname==='/profile')target='/app/account';return <Navigate replace to={target}/>}
+function RouteEffects(){const {pathname}=useLocation();useEffect(()=>{window.scrollTo({top:0,behavior:'instant' as ScrollBehavior});const lesson=lessons.find(item=>pathname.endsWith(`/${item.id}`));const map:Record<string,[string,string]>={'/':['Understand investing. Put it into practice.','Learn investing through clear lessons, simulated portfolios, and transparent statistical research.'],'/about':['About PerBillion','Why PerBillion connects financial learning, practice, and research.'],'/privacy':['Privacy','How PerBillion handles account and learning data.'],'/terms':['Terms','Terms for using PerBillion’s educational tools and simulations.'],'/login':['Welcome back','Sign in to continue learning, practicing, and researching.'],'/register':['Create your account','Create a free PerBillion account.']};const fallback=pathname.startsWith('/app/research')?['Research','Build and compare transparent statistical forecasts.']:pathname.startsWith('/app/practice')?['Practice','Test investing ideas with fictional assets and virtual money.']:pathname.startsWith('/app/learn')?['Learn','Build investing knowledge through 24 interactive lessons.']:pathname.startsWith('/app/progress')?['Progress','Review your learning progress and next steps.']:pathname.startsWith('/app/account')?['Account','Manage your PerBillion account and data.']:['Your workspace','Continue your PerBillion journey.'];const [name,description]=lesson?[lesson.title,lesson.description]:map[pathname]||fallback,title=`${name} · PerBillion`,canonical=new URL(pathname,location.origin).href;document.title=title;document.querySelector('meta[name="description"]')?.setAttribute('content',description);document.querySelector('link[rel="canonical"]')?.setAttribute('href',canonical);document.querySelector('meta[property="og:title"]')?.setAttribute('content',title);document.querySelector('meta[property="og:description"]')?.setAttribute('content',description);document.querySelector('meta[property="og:url"]')?.setAttribute('content',canonical);document.querySelector('meta[name="twitter:title"]')?.setAttribute('content',title);document.querySelector('meta[name="twitter:description"]')?.setAttribute('content',description)},[pathname]);return null}
+function Connection(){const id=useAuthStore(s=>s.token?s.user?.id||null:null),epoch=useLearningStore(s=>s.syncEpoch),activate=useLearningStore(s=>s.activateAccount),sync=useLearningStore(s=>s.synchronize);useEffect(()=>activate(id),[id,activate]);useEffect(()=>{if(id)void sync()},[id,epoch,sync]);return null}
+export default function App(){return <ErrorBoundary><BrowserRouter future={{v7_startTransition:true,v7_relativeSplatPath:true}}><Connection/><RouteEffects/><Suspense fallback={<Loading/>}><Routes>
+<Route path="/" element={<PublicSite/>}/><Route path="/about" element={<Legal page="about"/>}/><Route path="/privacy" element={<Legal page="privacy"/>}/><Route path="/terms" element={<Legal page="terms"/>}/><Route path="/login" element={<Login/>}/><Route path="/register" element={<Register/>}/>
+<Route path="/app/*" element={<Guard><Shell><Routes><Route index element={<Overview/>}/><Route path="onboarding" element={<Onboarding/>}/><Route path="learn" element={<Learn/>}/><Route path="learn/:lessonId" element={<Learn/>}/><Route path="practice" element={<Navigate replace to="portfolio"/>}/><Route path="practice/:tool" element={<Practice/>}/><Route path="research" element={<Research/>}/><Route path="research/:view" element={<Research/>}/><Route path="progress" element={<Progress/>}/><Route path="account" element={<Account/>}/><Route path="*" element={<Navigate replace to="/app"/>}/></Routes></Shell></Guard>}/>
+<Route path="/home" element={<Legacy/>}/><Route path="/dashboard" element={<Legacy/>}/><Route path="/education" element={<Legacy/>}/><Route path="/forecast" element={<Legacy/>}/><Route path="/quant" element={<Legacy/>}/><Route path="/progress" element={<Legacy/>}/><Route path="/profile" element={<Legacy/>}/><Route path="*" element={<Navigate replace to="/"/>}/>
+</Routes></Suspense></BrowserRouter></ErrorBoundary>}

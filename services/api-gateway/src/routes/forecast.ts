@@ -2,10 +2,10 @@ import { Router, Request, Response, NextFunction } from 'express';
 import axios from 'axios';
 import rateLimit from 'express-rate-limit';
 import logger from '../utils/logger';
-import { optionalAuthenticateToken } from '../middleware/auth';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
-router.use(optionalAuthenticateToken);
+router.use(authenticateToken);
 const SPRING_ORCHESTRATOR_URL = process.env.SPRING_ORCHESTRATOR_URL || 'http://spring-orchestrator:8080';
 const configuredDailyLimit = Number(process.env.FORECAST_DAILY_LIMIT || 25);
 const dailyLimit = Number.isInteger(configuredDailyLimit) && configuredDailyLimit > 0 ? configuredDailyLimit : 25;
@@ -51,7 +51,7 @@ router.post('/generate', forecastRateLimiter, validateForecastRequest, forecastD
     const { ticker, forecastMonths = 12, modelType = 'auto', advanced_config } = req.body;
 
     // Get userId from authenticated request
-    const userId = (req as any).user?.id || 'anonymous';
+    const userId = (req as any).user.id;
 
     // forecastMonths is retained for existing clients; the source series and
     // forecast periods are weekly.
@@ -102,10 +102,10 @@ router.get('/history', async (req: Request, res: Response) => {
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
       return res.status(400).json({ message: 'Limit must be an integer from 1 to 100' });
     }
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user.id;
 
     // If no ticker provided, get all user forecasts
-    if (!ticker && userId) {
+    if (!ticker) {
       try {
         const response = await axios.get(`${SPRING_ORCHESTRATOR_URL}/api/v1/forecasts/user/${userId}`, {
           params: { page: 0, size: pageSize }, timeout: 10000
@@ -122,17 +122,36 @@ router.get('/history', async (req: Request, res: Response) => {
 
     // Get forecasts for specific ticker
     if (ticker) {
-      const response = await axios.get(`${SPRING_ORCHESTRATOR_URL}/api/v1/forecasts/ticker/${ticker.toUpperCase()}`, {
-        params: { page: 0, size: pageSize }, timeout: 10000
+      const response = await axios.get(`${SPRING_ORCHESTRATOR_URL}/api/v1/forecasts/user/${userId}`, {
+        params: { page: 0, size: pageSize, ticker: ticker.toUpperCase() }, timeout: 10000
       });
       return res.json(response.data);
     }
 
-    // No ticker and no user - return empty
     res.json({ forecasts: [], total: 0 });
   } catch (error: any) {
     logger.error('Forecast history retrieval error:', error.message);
     res.status(503).json({ message: 'Forecast history is temporarily unavailable' });
+  }
+});
+
+// Re-run a saved input snapshot with another model. This consumes normal forecast capacity.
+router.post('/:forecastId/rerun', forecastRateLimiter, forecastDailyLimiter, async (req: Request, res: Response) => {
+  try {
+    const { forecastId } = req.params;
+    const { modelType = 'auto' } = req.body || {};
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(forecastId) || !['auto', 'ARIMA', 'SARIMA', 'SARIMAX', 'HOLT_WINTERS_ADDITIVE', 'HOLT_WINTERS_MULTIPLICATIVE', 'HOLT_WINTERS_DAMPED'].includes(modelType)) return res.status(400).json({ message: 'Choose a valid saved forecast and model' });
+    const prior = await axios.get(`${SPRING_ORCHESTRATOR_URL}/api/v1/forecasts/${forecastId}`, { timeout: 10000 });
+    if (prior.data?.userId !== (req as any).user.id) return res.status(404).json({ message: 'Forecast not found' });
+    const data = prior.data?.historicalData?.series;
+    const forecastHorizon = prior.data?.requestMetadata?.forecastHorizon;
+    if (!Array.isArray(data) || !Number.isInteger(forecastHorizon)) return res.status(409).json({ message: 'This legacy run has no reusable source snapshot' });
+    const response = await axios.post(`${SPRING_ORCHESTRATOR_URL}/api/v1/forecasts`, { userId: (req as any).user.id, ticker: prior.data.ticker, data, forecastHorizon, modelType }, { timeout: 120000 });
+    res.status(response.status).json(response.data);
+  } catch (error: any) {
+    if (error.response?.status === 404) return res.status(404).json({ message: 'Forecast not found' });
+    logger.error('Forecast snapshot rerun failed:', error.message);
+    res.status(error.response?.status || 503).json({ message: error.response?.data?.message || 'The saved snapshot could not be rerun' });
   }
 });
 
@@ -143,7 +162,7 @@ router.get('/:forecastId', async (req: Request, res: Response) => {
 
     if (!/^[a-zA-Z0-9_-]{1,100}$/.test(forecastId)) return res.status(400).json({ message: 'Invalid forecast ID' });
     const response = await axios.get(`${SPRING_ORCHESTRATOR_URL}/api/v1/forecasts/${forecastId}`, { timeout: 10000 });
-
+    if (response.data?.userId !== (req as any).user.id) return res.status(404).json({ message: 'Forecast not found' });
     res.json(response.data);
   } catch (error: any) {
     logger.error('Forecast retrieval error:', error.message);

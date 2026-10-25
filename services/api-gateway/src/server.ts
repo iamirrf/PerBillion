@@ -12,6 +12,7 @@ import healthRoutes from './routes/health';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import educationRoutes from './routes/education';
+import productRoutes from './routes/product';
 import logger from './utils/logger';
 import { GridFSBucket } from 'mongodb';
 import { getDb } from './utils/db';
@@ -79,6 +80,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/forecast', forecastRoutes);
 app.use('/api/education', educationRoutes);
+app.use('/api/product', productRoutes);
 
 // Error handling
 app.use(errorHandler);

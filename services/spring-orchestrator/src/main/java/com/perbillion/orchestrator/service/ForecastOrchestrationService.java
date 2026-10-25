@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.*;
 
 @Service
@@ -32,6 +34,12 @@ public class ForecastOrchestrationService {
         forecast.setStatus("pending");
         forecast.setModelType(request.getModelType());
         forecast.setCreatedAt(Instant.now());
+        Map<String, Object> requestMetadata = new LinkedHashMap<>();
+        requestMetadata.put("requestedModel", request.getModelType());
+        requestMetadata.put("forecastHorizon", request.getForecastHorizon());
+        requestMetadata.put("sourceProvided", request.getData() != null && !request.getData().isEmpty());
+        requestMetadata.put("frequency", "weekly");
+        forecast.setRequestMetadata(requestMetadata);
         
         // Save initial forecast
         forecast = forecastRepository.save(forecast);
@@ -69,6 +77,19 @@ public class ForecastOrchestrationService {
                         throw new RuntimeException("No historical data available for ticker: " + request.getTicker());
                     }
                 }
+
+                Forecast sourceForecast = forecastRepository.findById(forecastId)
+                    .orElseThrow(() -> new RuntimeException("Forecast not found: " + forecastId));
+                Map<String, Object> snapshot = new LinkedHashMap<>();
+                snapshot.put("series", data);
+                snapshot.put("frequency", "weekly");
+                snapshot.put("observationCount", data.size());
+                snapshot.put("sourceSnapshotId", snapshotId(data));
+                if (!data.isEmpty() && !data.get(data.size() - 1).isEmpty()) {
+                    snapshot.put("sourceCutoff", String.valueOf(data.get(data.size() - 1).get(0)));
+                }
+                sourceForecast.setHistoricalData(snapshot);
+                forecastRepository.save(sourceForecast);
                 
                 // Call ML engine
                 Map<String, Object> mlRequest = buildMlRequest(request, data);
@@ -231,6 +252,16 @@ public class ForecastOrchestrationService {
         return sanitized;
     }
 
+    private String snapshotId(List<List<Object>> data) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(data.toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to fingerprint forecast source data", error);
+        }
+    }
+
     public ForecastResponse getForecast(String forecastId) {
         Forecast forecast = forecastRepository.findById(forecastId)
             .orElseThrow(() -> new RuntimeException("Forecast not found: " + forecastId));
@@ -243,6 +274,13 @@ public class ForecastOrchestrationService {
             userId.toString(), PageRequest.of(page, size)
         );
         
+        return forecasts.map(this::mapToResponse);
+    }
+
+    public Page<ForecastResponse> getUserForecasts(UUID userId, String ticker, int page, int size) {
+        Page<Forecast> forecasts = forecastRepository.findByUserIdAndTickerOrderByCreatedAtDesc(
+            userId.toString(), ticker.toUpperCase(), PageRequest.of(page, size)
+        );
         return forecasts.map(this::mapToResponse);
     }
 
@@ -266,6 +304,8 @@ public class ForecastOrchestrationService {
             .status(forecast.getStatus())
             .modelType(forecast.getModelType())
             .parameters(forecast.getParameters())
+            .requestMetadata(forecast.getRequestMetadata())
+            .historicalData(forecast.getHistoricalData())
             .forecastData(forecast.getForecastData())
             .metrics(forecast.getMetrics())
             .diagnostics(forecast.getDiagnostics())

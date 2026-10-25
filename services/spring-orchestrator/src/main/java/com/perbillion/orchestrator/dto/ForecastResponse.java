@@ -32,6 +32,12 @@ public class ForecastResponse {
     @Schema(description = "Model parameters")
     private Map<String, Object> parameters;
 
+    @Schema(description = "Immutable request inputs and source provenance")
+    private Map<String, Object> requestMetadata;
+
+    @Schema(description = "Historical input snapshot used by the model")
+    private Map<String, Object> historicalData;
+
     @Schema(description = "Forecast data with predictions and confidence intervals")
     private Map<String, Object> forecastData;
 

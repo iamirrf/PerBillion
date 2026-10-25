@@ -1,11 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import api from '../lib/api'
 import { useAuthStore } from '../store/authStore'
 import { useLearningStore } from './learningStore'
 import { lessons } from './curriculum'
-import './account.css'
 
 function Arrow() {
   return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
@@ -17,7 +16,7 @@ function Eye({ visible }: { visible: boolean }) {
 
 function errorMessage(error: unknown, fallback: string) {
   if (!isAxiosError(error)) return fallback
-  if (!error.response) return 'We couldn’t connect to the account service. Please try again, or continue learning as a guest.'
+  if (!error.response) return 'We couldn’t connect to the account service. Please try again.'
   const data = error.response.data
   if (typeof data?.error === 'string') return data.error
   if (Array.isArray(data?.errors) && data.errors[0]?.msg) return String(data.errors[0].msg)
@@ -43,11 +42,12 @@ function AuthPage({ creating }: { creating: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => { try { if (!creating && sessionStorage.getItem('perbillion-session-expired')) { sessionStorage.removeItem('perbillion-session-expired'); return 'Your session expired. Sign in again to continue where you left off.' } } catch { /* Ignore unavailable session storage. */ } return '' })
   const [submitting, setSubmitting] = useState(false)
   const setAuth = useAuthStore(state => state.setAuth)
   const token = useAuthStore(state => state.token)
   const navigate = useNavigate()
+  const [params] = useSearchParams()
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -63,7 +63,9 @@ function AuthPage({ creating }: { creating: boolean }) {
       })
       if (!response.data?.token || !response.data?.user) throw new Error('Invalid account response')
       setAuth(response.data.user, response.data.token)
-      navigate('/home', { replace: true })
+      const requested = params.get('returnTo')
+      const destination = requested?.startsWith('/app') && !requested.startsWith('//') ? requested : (creating ? '/app/onboarding' : '/app')
+      navigate(destination, { replace: true })
     } catch (failure) {
       setError(errorMessage(failure, creating ? 'We couldn’t create your account. Please try again.' : 'We couldn’t sign you in. Please check your details.'))
     } finally { setSubmitting(false) }
@@ -72,17 +74,17 @@ function AuthPage({ creating }: { creating: boolean }) {
   return <div className="account-auth">
     <aside className="account-story">
       <div className="account-story-top"><span className="eyebrow">A better way to understand money</span><span className="account-story-index">01 — ∞</span></div>
-      <div className="account-story-art"><img src="/assets/gold-sculpture.webp" alt="Sculptural gold form" width="720" height="720" /></div>
+      <div className="account-story-art" aria-hidden="true"><span/><span/><span/></div>
       <div className="account-story-copy"><h2>Invest in<br />your understanding.</h2><p>Small lessons. Clearer thinking.<br />A lifetime of better decisions.</p></div>
       <div className="account-story-bottom"><span>Free to learn. Built for curiosity.</span><span>PERBILLION</span></div>
     </aside>
     <section className="account-auth-main" aria-labelledby="account-auth-title">
-      <Link to="/education" className="account-back"><span aria-hidden="true">←</span> Back to learning</Link>
+      <Link to="/" className="account-back"><span aria-hidden="true">←</span> Back home</Link>
       <div className="account-auth-inner">
         <span className="eyebrow">{creating ? 'Your next chapter' : 'Keep your momentum'}</span>
         <h1 id="account-auth-title">{creating ? 'Start with curiosity.' : 'Welcome back.'}</h1>
         <p className="muted">{creating ? 'Create your free PerBillion account.' : 'Sign in to your PerBillion account.'}</p>
-        {token ? <div className="account-already panel"><p>You’re already signed in.</p><Link className="button button-gold" to="/profile">Go to your profile <Arrow /></Link></div> : <form onSubmit={submit} className="account-auth-form">
+        {token ? <div className="account-already panel"><p>You’re already signed in.</p><Link className="button button-gold" to="/app/account">Go to your account <Arrow /></Link></div> : <form onSubmit={submit} className="account-auth-form">
           {error && <p className="account-message account-error" role="alert">{error}</p>}
           {creating && <div className="account-field"><label htmlFor="auth-name">Full name</label><input id="auth-name" autoComplete="name" required maxLength={80} placeholder="Your name" value={name} onChange={event => setName(event.target.value)} /></div>}
           <div className="account-field"><label htmlFor="auth-email">Email address</label><input id="auth-email" type="email" autoComplete="email" required maxLength={254} placeholder="you@example.com" value={email} onChange={event => setEmail(event.target.value)} /></div>
@@ -91,8 +93,6 @@ function AuthPage({ creating }: { creating: boolean }) {
           <button className="button button-gold account-submit" type="submit" disabled={submitting}>{submitting ? (creating ? 'Creating your account…' : 'Signing in…') : (creating ? 'Create free account' : 'Sign in')} {!submitting && <Arrow />}</button>
           <p className="account-auth-switch">{creating ? 'Already have an account?' : 'New to PerBillion?'} <Link to={creating ? '/login' : '/register'}>{creating ? 'Sign in' : 'Create an account'}</Link></p>
         </form>}
-        <div className="account-guest"><span /> <p>Or, start exploring</p> <span /></div>
-        <Link to="/education" className="button button-ghost account-guest-button">Continue as a guest <Arrow /></Link>
         <p className="account-auth-note">Every lesson and interactive lab is free.<br />No card. No subscription.</p>
       </div>
     </section>
@@ -109,7 +109,7 @@ interface Preferences {
   preferredModel: string
   theme: string
 }
-const defaultPreferences: Preferences = { defaultTicker: 'AAPL', defaultForecastHorizon: 12, advancedModeEnabled: false, preferredModel: 'auto', theme: 'dark' }
+const defaultPreferences: Preferences = { defaultTicker: 'AAPL', defaultForecastHorizon: 12, advancedModeEnabled: false, preferredModel: 'auto', theme: 'light' }
 const preferenceKey = 'perbillion-preferences-v2'
 const supportedModels = new Set(['auto', 'ARIMA', 'SARIMA', 'SARIMAX', 'HOLT_WINTERS_ADDITIVE', 'HOLT_WINTERS_MULTIPLICATIVE', 'HOLT_WINTERS_DAMPED'])
 
@@ -238,7 +238,7 @@ export function Profile() {
   async function savePreferences(event: FormEvent) {
     event.preventDefault()
     setSavingPreferences(true); setError(''); setMessage('')
-    const next = { ...preferences, defaultTicker: preferences.defaultTicker.trim().toUpperCase(), theme: 'dark' }
+    const next = { ...preferences, defaultTicker: preferences.defaultTicker.trim().toUpperCase(), theme: 'light' }
     try {
       if (token) await api.put('/user/preferences', next)
       let stored = true
@@ -260,12 +260,18 @@ export function Profile() {
     window.dispatchEvent(new CustomEvent('perbillion-motion', { detail: next }))
   }
 
-  function exportProgress() {
-    const content = { version: 2, exportedAt: new Date().toISOString(), completedLessons: completed, priorCoursework: legacy, syncStatus, preferences, reducedMotion }
+  async function exportProgress() {
+    setError(''); setMessage('Preparing your export…')
+    const product = token ? await Promise.allSettled([
+      api.get('/product/practice?scenario=steady-growth'), api.get('/product/practice?scenario=rate-shock'), api.get('/product/practice?scenario=selloff-recovery'),
+      api.get('/product/watchlist'), api.get('/product/comparisons'), api.get('/forecast/history?limit=100'), api.get('/education/v2/exercises'),
+    ]) : []
+    const values = product.map(item => item.status === 'fulfilled' ? item.value.data : null)
+    const content = { version: 3, exportedAt: new Date().toISOString(), profile: user ? { id: user.id, email: user.email, fullName: user.fullName, username: user.username } : null, completedLessons: completed, completedExercises: values[6]?.completed || {}, priorCoursework: legacy, syncStatus, preferences, reducedMotion, practiceScenarios: values.slice(0, 3), watchlist: values[3] || null, researchComparisons: values[4] || null, forecastHistory: values[5] || null }
     const url = URL.createObjectURL(new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }))
-    const link = document.createElement('a'); link.href = url; link.download = 'perbillion-learning-progress.json'; link.click()
+    const link = document.createElement('a'); link.href = url; link.download = 'perbillion-account-export.json'; link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setMessage('Your progress export is ready.')
+    setMessage('Your account export is ready.')
   }
 
   async function confirmProgressReset() {
@@ -306,9 +312,9 @@ export function Profile() {
         {token && <section className="panel account-profile-card account-legacy" aria-labelledby="prior-coursework-title"><span className="eyebrow">PRIOR COURSEWORK</span><h2 id="prior-coursework-title">Your earlier lessons.</h2><p className="muted">Your previous curriculum stays in your transcript. Its completions are separate from the current learning path.</p>{legacyUnavailable ? <p className="account-legacy-state">Your earlier coursework is temporarily unavailable.</p> : legacy.length ? <div className="account-legacy-list">{legacy.map(item => <div key={item.id}><span>{item.title}</span><strong>{item.score}%</strong></div>)}</div> : <p className="account-legacy-state">No earlier lessons completed.</p>}</section>}
       </div>
       <aside className="account-profile-sidebar">
-        <section className="panel account-progress-card" aria-labelledby="progress-title"><span className="eyebrow">Your learning, in focus</span><h2 id="progress-title">Forward is forward.</h2><div className="account-progress-ring"><svg viewBox="0 0 160 160" aria-label={`${completions.length} of ${lessons.length} lessons completed`} role="img"><circle cx="80" cy="80" r="66" fill="none" stroke="#292c27" strokeWidth="5" /><circle cx="80" cy="80" r="66" fill="none" stroke="#d6b879" strokeWidth="5" strokeLinecap="round" strokeDasharray={`${Math.min(completions.length / lessons.length, 1) * 414.69} 414.69`} transform="rotate(-90 80 80)" /></svg><div><strong>{completions.length}<span>/{lessons.length}</span></strong><span>lessons completed</span></div></div><dl className="account-learning-stats"><div><dt>Average quiz score</dt><dd>{completions.length ? `${average}%` : '—'}</dd></div><div><dt>Progress storage</dt><dd>{token ? syncStatus === 'synced' ? 'Synced to account' : syncStatus === 'offline' ? 'On device · sync pending' : 'Syncing…' : 'On this device'}</dd></div></dl>{token && syncStatus === 'offline' && <button className="account-text-link account-sync-retry" onClick={() => void synchronize()}>Retry account sync</button>}<Link className="button button-gold" to="/education">Keep learning <Arrow /></Link></section>
-        <section className="panel account-data-card"><span className="eyebrow">03 / Your data</span><h2>Always yours.</h2><p className="muted">Download a copy of your learning progress and preferences.</p><button className="button button-ghost" onClick={exportProgress}>Export progress <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" /></svg></button><div className="account-reset">{confirmReset ? <div><p>{token ? 'Reset current learning progress on this device and in your account? Prior coursework will remain.' : 'Reset current lesson completions on this device?'}</p><div className="account-reset-actions"><button type="button" className="account-danger" disabled={resetting} onClick={() => void confirmProgressReset()}>{resetting ? 'Resetting…' : 'Yes, reset progress'}</button><button type="button" className="account-text-link" onClick={() => setConfirmReset(false)}>Keep progress</button></div></div> : <button type="button" className="account-text-link" onClick={() => setConfirmReset(true)}>Reset learning progress</button>}</div></section>
-        {token && <button type="button" className="button button-ghost account-signout" onClick={() => { logout(); navigate('/education'); }}>Sign out <Arrow /></button>}
+        <section className="panel account-progress-card" aria-labelledby="progress-title"><span className="eyebrow">Your learning, in focus</span><h2 id="progress-title">Forward is forward.</h2><div className="account-progress-ring"><svg viewBox="0 0 160 160" aria-label={`${completions.length} of ${lessons.length} lessons completed`} role="img"><circle cx="80" cy="80" r="66" fill="none" stroke="#e1e4eb" strokeWidth="5" /><circle cx="80" cy="80" r="66" fill="none" stroke="#245bff" strokeWidth="5" strokeLinecap="round" strokeDasharray={`${Math.min(completions.length / lessons.length, 1) * 414.69} 414.69`} transform="rotate(-90 80 80)" /></svg><div><strong>{completions.length}<span>/{lessons.length}</span></strong><span>lessons completed</span></div></div><dl className="account-learning-stats"><div><dt>Average quiz score</dt><dd>{completions.length ? `${average}%` : '—'}</dd></div><div><dt>Progress storage</dt><dd>{token ? syncStatus === 'synced' ? 'Synced to account' : syncStatus === 'offline' ? 'On device · sync pending' : 'Syncing…' : 'On this device'}</dd></div></dl>{token && syncStatus === 'offline' && <button className="account-text-link account-sync-retry" onClick={() => void synchronize()}>Retry account sync</button>}<Link className="button button-gold" to="/app/learn">Keep learning <Arrow /></Link></section>
+        <section className="panel account-data-card"><span className="eyebrow">03 / Your data</span><h2>Always yours.</h2><p className="muted">Download your profile, learning, practice, watchlist, and saved research data.</p><button className="button button-ghost" onClick={()=>void exportProgress()}>Export account data <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" /></svg></button><div className="account-reset">{confirmReset ? <div><p>{token ? 'Reset current learning progress on this device and in your account? Prior coursework will remain.' : 'Reset current lesson completions on this device?'}</p><div className="account-reset-actions"><button type="button" className="account-danger" disabled={resetting} onClick={() => void confirmProgressReset()}>{resetting ? 'Resetting…' : 'Yes, reset progress'}</button><button type="button" className="account-text-link" onClick={() => setConfirmReset(false)}>Keep progress</button></div></div> : <button type="button" className="account-text-link" onClick={() => setConfirmReset(true)}>Reset learning progress</button>}</div></section>
+        {token && <button type="button" className="button button-ghost account-signout" onClick={() => { logout(); navigate('/'); }}>Sign out <Arrow /></button>}
       </aside>
     </div>
   </div>

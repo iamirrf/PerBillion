@@ -4,9 +4,10 @@ Updated 2026-10-25. The public pilot is deployed at **https://perbillion-7058253
 
 ## Product boundary
 
-- The 24 current lessons, their 48 explained quiz questions, growth simulator, and synthetic paper-trading account are free and work without an account or paid data feed.
-- An account is optional. Guest lesson progress stays in browser storage. On sign-in, current-curriculum completions merge by lesson ID, retain the best score, and synchronize to MongoDB. The older 30-lesson curriculum remains a separate prior-coursework transcript; it is never mapped into a new lesson completion.
-- Paper trades use fictional prices and virtual cash. The example forecast chart is synthetic. Generated forecasts use historical weekly adjusted prices and statistical models; they are estimates, not recommendations or real-money orders.
+- The public marketing pages are available without an account. The 24 current lessons, 48 explained quiz questions, practice tools, saved watchlists, and forecast research are free after login or registration.
+- Current-curriculum completions synchronize by lesson ID and retain the best score. The older 30-lesson curriculum remains a separate prior-coursework transcript; it is never mapped into a new lesson completion.
+- Practice uses three versioned deterministic scenarios, five fictional assets, $10,000 virtual cash, whole-unit instant fills, and no fees or slippage. Sessions are stored atomically in MongoDB with integer-cent balances, revision checks, and idempotent request IDs. Cached portfolios remain readable offline; changes require connectivity.
+- Generated forecasts use historical weekly adjusted prices and statistical models; they are estimates, not recommendations or real-money orders. New records retain inputs, model, weekly horizon, historical source cutoff, generation time, and the source series needed for a bounded snapshot rerun.
 - Forecast generation is bounded to five requests per minute and `FORECAST_DAILY_LIMIT` accepted requests per rolling 24 hours for one API gateway process (default 25). The limit is shared by all visitors on that process. A multi-instance deployment needs a shared limiter before scaling out. There is no promise of unlimited live forecasts.
 - The gateway field `forecastMonths` remains for existing clients. Its integer value is a **weekly** forecast horizon from 1 to 52.
 
@@ -26,7 +27,7 @@ A project-scoped monthly $1 billing alert, `PerBillion free-tier watch`, is conf
 | Historical market data | Alpha Vantage `TIME_SERIES_WEEKLY_ADJUSTED`. The owner confirmed that the key is licensed for public use. The operator must maintain that entitlement. | Per the owner's provider agreement |
 | Model inference | Statsmodels runs in the Python Cloud Run container; no third-party model token fee. Five jobs per day is the current deployment-wide limit. | Cloud Run usage above its free tier is billed |
 
-The product stays free to learners. The Spring data fetcher caches up to 100 weekly ticker series for 24 hours per process. Each fresh uncached ticker can still use one provider request. The single-instance forecast limit is held in gateway memory and resets on restart; it is a capacity control, not a billing cap.
+The product stays free to learners. The Spring data fetcher caches up to 100 weekly ticker series for 24 hours per process. Each fresh uncached ticker can still use one provider request. New model runs against saved snapshots consume the same forecast capacity. The single-instance forecast limit is held in gateway memory and resets on restart; it is a capacity control, not a billing cap.
 
 ## Deployment inputs
 
@@ -49,20 +50,20 @@ bash scripts/gcp/deploy-cloud-run.sh <tested-commit-sha>
 
 ## Release checks
 
-The GitHub release workflow runs frontend build and lint, gateway tests, Java build, Python syntax, then a disposable production Compose smoke test including MongoDB, Spring, Python, account progress, and profile image persistence after a gateway restart. Locally, use Java 21 for Maven. Verify the live deployment:
+The GitHub release workflow runs frontend build and lint, gateway tests, Java build, Python syntax, then a disposable production Compose smoke test including MongoDB, Spring, Python, account progress, atomic and idempotent practice actions, watchlists, and profile image persistence after a gateway restart. Locally, use Java 21 for Maven. Verify the live deployment:
 
 ```bash
 curl -fsS https://perbillion-705825363504.us-central1.run.app/api/health
 python3 scripts/gcp/live-smoke.py https://perbillion-705825363504.us-central1.run.app
 ```
 
-In a browser on the actual host, complete a guest lesson, refresh, sign in and check merge status, restore on a second device, export, reset only current progress, verify an old-coursework transcript, change growth inputs, reject invalid virtual orders, place valid virtual orders, and exercise forecast pending, completion, error, timeout, and cancellation states. Check desktop and phone widths, keyboard focus, reduced motion, unavailable services, and social preview metadata. A live four-week AAPL forecast completed successfully on 2026-10-25. Confirm no browser runtime errors or horizontal overflow.
+In a browser on the actual host, follow marketing → registration → onboarding → lesson → practice → research. Refresh each deep link, expire a session, log out, switch accounts, export, reset only current progress, and verify the separate prior-coursework transcript. Reject invalid and duplicate virtual orders, test a concurrent-revision conflict, and exercise forecast pending, completion, capacity, error, timeout, cancellation, CSV export, history, and snapshot rerun states. Check phone, tablet, and desktop widths, keyboard focus, touch charts, contrast, reduced motion, empty/loading/error states, layout stability, canonical metadata, and social previews.
 
 ## Monitoring and rollback
 
 - Watch Cloud Run 5xx/429 rates, forecast completion and duration, model memory/CPU, provider quota errors, MongoDB health, progress-sync errors, backup jobs, and actual billing. Do not send lesson answers or account tokens to analytics. Measure aggregate lesson starts, completions, and return visits only after choosing a privacy policy and consent approach.
 - The VM's `/usr/local/bin/perbillion-backup` runs daily via cron and writes compressed MongoDB archives to `gs://perbillion-free-2026-private/backups/`. The bucket lifecycle removes backup objects after seven days. Test restore into a separate database with `mongorestore --config=/etc/perbillion/mongodump.yaml --gzip --archive=<downloaded-archive> --nsFrom='perbillion.*' --nsTo='perbillion_restore_check.*'`; verify counts and indexes, then remove only that test database. On 2026-10-25, a backup restored 35 documents, including all 30 prior lessons, account progress, an avatar, and a forecast, with zero failures. For a real incident, inspect the separate restore before replacing production data. A new VM also needs fresh MongoDB administrator and app users because the backup covers the `perbillion` database, not the `admin` database.
-- If an app revision fails, use `gcloud run revisions list --service=perbillion --region=us-central1 --project=perbillion-free-2026` to find the previous healthy revision, then `gcloud run services update-traffic perbillion --to-revisions=<previous-revision>=100 --region=us-central1 --project=perbillion-free-2026`. Repeat health and live smoke checks. Keep MongoDB intact; `education_progress_v2` is additive and legacy progress remains separate. Restore MongoDB only for a data incident, not for a UI rollback.
+- If an app revision fails, use `gcloud run revisions list --service=perbillion --region=us-central1 --project=perbillion-free-2026` to find the previous healthy revision, then `gcloud run services update-traffic perbillion --to-revisions=<previous-revision>=100 --region=us-central1 --project=perbillion-free-2026`. Repeat health and live smoke checks. Keep MongoDB intact; `education_progress_v2`, `education_exercises_v2`, `practice_sessions`, `watchlists`, and `research_comparisons` are additive and legacy progress remains separate. Restore MongoDB only for a data incident, not for a UI rollback.
 - `docker-compose.yml` remains the local development stack. `docker-compose.production.yml` remains a portable single-host production option; it is exercised in CI. The Google deployment uses the same application code in Cloud Run and persistent MongoDB on the free VM.
 
 ## Operating limits

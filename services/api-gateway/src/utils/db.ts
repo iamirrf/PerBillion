@@ -81,6 +81,9 @@ export type UserPreferencesDoc = {
   advancedModeEnabled?: boolean;
   preferredModel?: string;
   theme?: string;
+  learningGoal?: 'start' | 'portfolio' | 'quant';
+  experienceLevel?: 'new' | 'some' | 'experienced';
+  onboardingComplete?: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -89,6 +92,9 @@ export function getCollections(database: Db) {
   return {
     users: database.collection<UserDoc>('users'),
     userPreferences: database.collection<UserPreferencesDoc>('user_preferences'),
+    practiceSessions: database.collection('practice_sessions'),
+    watchlists: database.collection('watchlists'),
+    researchComparisons: database.collection('research_comparisons'),
   };
 }
 
