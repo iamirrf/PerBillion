@@ -3,6 +3,9 @@ name: Publish Cloud Run images
 on:
   push:
     branches: [codex/perbillion-release]
+    paths:
+      - 'services/**'
+      - '.github/workflows/publish-images.yml'
   workflow_dispatch:
 
 permissions:

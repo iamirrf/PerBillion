@@ -23,7 +23,7 @@ def request(path, method="GET", body=None, token=None):
             return response.status, json.loads(content) if content and "json" in response.headers.get("Content-Type", "") else content
     except HTTPError as error:
         content = error.read()
-        return error.code, json.loads(content) if content else None
+        return error.code, json.loads(content) if content and "json" in error.headers.get("Content-Type", "") else content
 
 
 status, health = request("/api/health")
