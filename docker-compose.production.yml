@@ -50,13 +50,12 @@ services:
       PORT: 3000
       MONGODB_URI: ${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD:?Set MONGO_PASSWORD}@mongodb:27017/perbillion?authSource=admin}
       MONGODB_DATABASE: ${MONGODB_DATABASE:-perbillion}
+      PERSIST_UPLOADS_IN_MONGO: 'true'
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       JWT_EXPIRY: ${JWT_EXPIRY:-7d}
       FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL to the public origin}
       SPRING_ORCHESTRATOR_URL: http://spring-orchestrator:8080
       FORECAST_DAILY_LIMIT: ${FORECAST_DAILY_LIMIT:-25}
-    volumes:
-      - uploads_data:/app/uploads
     depends_on:
       mongodb:
         condition: service_healthy
@@ -85,4 +84,3 @@ services:
 volumes:
   mongodb_data:
   ml_cache:
-  uploads_data:

@@ -1,6 +1,9 @@
 """Exercise a disposable production Compose stack without a live market-data call."""
 
+import base64
 import json
+import subprocess
+import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -47,6 +50,39 @@ status, account = request("/api/auth/register", "POST", {
 })
 assert status == 201 and account.get("token"), (status, account)
 token = account["token"]
+
+png = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZbH0AAAAASUVORK5CYII="
+)
+boundary = "perbillion-smoke-boundary"
+multipart = (
+    f"--{boundary}\r\nContent-Disposition: form-data; name=\"profilePicture\"; filename=\"avatar.png\"\r\n"
+    "Content-Type: image/png\r\n\r\n"
+).encode() + png + f"\r\n--{boundary}--\r\n".encode()
+avatar_request = Request(
+    BASE + "/api/user/profile-picture",
+    data=multipart,
+    method="POST",
+    headers={
+        "Authorization": f"Bearer {token}",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    },
+)
+with urlopen(avatar_request, timeout=30) as response:
+    avatar_path = json.load(response)["profilePicture"]
+status, avatar = request(avatar_path)
+assert status == 200 and avatar == png
+subprocess.run(["docker", "compose", "-f", "docker-compose.production.yml", "restart", "api-gateway"], check=True)
+for attempt in range(30):
+    status, health = request("/api/health")
+    if status == 200:
+        break
+    time.sleep(2)
+else:
+    raise AssertionError("Gateway did not recover after restart")
+status, avatar = request(avatar_path)
+assert status == 200 and avatar == png
+print("Profile image persists across gateway restart: OK")
 
 status, progress = request("/api/education/v2/progress", token=token)
 assert status == 200 and progress["completed"] == {}, (status, progress)

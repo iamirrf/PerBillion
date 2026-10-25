@@ -36,3 +36,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]
+
+# Cloud Run sidecars share a network namespace, so the gateway is on loopback.
+FROM production AS cloudrun
+COPY nginx.cloudrun.conf /etc/nginx/conf.d/default.conf

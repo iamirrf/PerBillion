@@ -5,6 +5,9 @@ import logger from '../utils/logger';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { GridFSBucket } from 'mongodb';
+import { Readable } from 'stream';
+import { randomUUID } from 'crypto';
 
 const router = Router();
 
@@ -25,8 +28,9 @@ const storage = multer.diskStorage({
   },
 });
 
+const persistUploadsInMongo = process.env.PERSIST_UPLOADS_IN_MONGO === 'true';
 const upload = multer({
-  storage,
+  storage: persistUploadsInMongo ? multer.memoryStorage() : storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb: any) => {
     const extensions: Record<string, string[]> = {
@@ -137,22 +141,34 @@ router.post('/profile-picture', upload.single('profilePicture'), async (req: Aut
     const database = await getDb();
     const { users } = getCollections(database);
 
-    // Get old profile picture to delete it
     const user = await users.findOne({ _id: userId });
-    if (user?.profilePicture) {
-      const oldPath = path.join(__dirname, '../../uploads/profiles', path.basename(user.profilePicture));
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
-      }
+    let filename = req.file.filename;
+    if (persistUploadsInMongo) {
+      filename = `${userId}-${Date.now()}-${randomUUID()}${path.extname(req.file.originalname).toLowerCase()}`;
+      const bucket = new GridFSBucket(database, { bucketName: 'profile_images' });
+      const stream = bucket.openUploadStream(filename, { metadata: { contentType: req.file.mimetype } });
+      await new Promise<void>((resolve, reject) => {
+        Readable.from([req.file!.buffer]).pipe(stream).on('finish', resolve).on('error', reject);
+      });
     }
-
-    // Store relative path
-    const profilePicturePath = `/uploads/profiles/${req.file.filename}`;
+    const profilePicturePath = `/uploads/profiles/${filename}`;
 
     await users.updateOne(
       { _id: userId },
       { $set: { profilePicture: profilePicturePath, updatedAt: new Date() } }
     );
+
+    if (user?.profilePicture?.startsWith('/uploads/profiles/')) {
+      const oldFilename = path.basename(user.profilePicture);
+      if (persistUploadsInMongo) {
+        const bucket = new GridFSBucket(database, { bucketName: 'profile_images' });
+        const oldFiles = await bucket.find({ filename: oldFilename }).toArray();
+        await Promise.all(oldFiles.map(file => bucket.delete(file._id)));
+      } else {
+        const oldPath = path.join(__dirname, '../../uploads/profiles', oldFilename);
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+    }
 
     res.json({ 
       profilePicture: profilePicturePath,

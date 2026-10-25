@@ -9,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Instant;
@@ -24,7 +23,6 @@ public class ForecastOrchestrationService {
     private final WebClient mlEngineClient;
     private final DataFetchService dataFetchService;
 
-    @Transactional
     public ForecastResponse createForecast(ForecastRequest request) {
         // Create forecast document
         Forecast forecast = new Forecast();
@@ -38,15 +36,22 @@ public class ForecastOrchestrationService {
         // Save initial forecast
         forecast = forecastRepository.save(forecast);
         
-        // Trigger ML processing asynchronously
         final String forecastId = forecast.getId();
+        if (Boolean.parseBoolean(System.getenv().getOrDefault("FORECAST_SYNCHRONOUS", "false"))) {
+            // Request-based Cloud Run allocates CPU only while the request is active.
+            processForecast(forecastId, request);
+            return getForecast(forecastId);
+        }
         processForecastAsync(forecastId, request);
-        
+
         return mapToResponse(forecast);
     }
 
     private void processForecastAsync(String forecastId, ForecastRequest request) {
-        new Thread(() -> {
+        new Thread(() -> processForecast(forecastId, request)).start();
+    }
+
+    private void processForecast(String forecastId, ForecastRequest request) {
             try {
                 // Update status
                 updateForecastStatus(forecastId, "running");
@@ -83,7 +88,6 @@ public class ForecastOrchestrationService {
                 log.error("Forecast processing failed: {}", e.getMessage(), e);
                 updateForecastStatus(forecastId, "failed", e.getMessage());
             }
-        }).start();
     }
 
     private Map<String, Object> buildMlRequest(ForecastRequest request, List<List<Object>> data) {

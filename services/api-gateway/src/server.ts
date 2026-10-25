@@ -13,6 +13,8 @@ import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import educationRoutes from './routes/education';
 import logger from './utils/logger';
+import { GridFSBucket } from 'mongodb';
+import { getDb } from './utils/db';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,7 +36,33 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve static uploads
+// Cloud Run storage is ephemeral; production profile images live in MongoDB.
+if (process.env.PERSIST_UPLOADS_IN_MONGO === 'true') {
+  app.get('/uploads/profiles/:filename', async (req, res) => {
+    const filename = req.params.filename;
+    if (!/^[a-f0-9-]{36}-\d+-[a-f0-9-]{36}\.(jpe?g|png|gif|webp)$/.test(filename)) {
+      return res.sendStatus(404);
+    }
+    try {
+      const database = await getDb();
+      const bucket = new GridFSBucket(database, { bucketName: 'profile_images' });
+      const files = await bucket.find({ filename }).limit(1).toArray();
+      if (!files.length) return res.sendStatus(404);
+      res.type(files[0].metadata?.contentType || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      bucket.openDownloadStream(files[0]._id).on('error', (error) => {
+        logger.error('Profile image retrieval error:', error);
+        if (!res.headersSent) res.sendStatus(500);
+        else res.destroy(error);
+      }).pipe(res);
+    } catch (error) {
+      logger.error('Profile image retrieval error:', error);
+      if (!res.headersSent) res.sendStatus(500);
+    }
+  });
+}
+
+// Serve local uploads in development.
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Logging
