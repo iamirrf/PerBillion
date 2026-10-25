@@ -1,0 +1,70 @@
+name: Release checks
+
+on:
+  push:
+    branches: [main, codex/perbillion-release]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Frontend build and lint
+        working-directory: services/frontend
+        run: |
+          npm ci
+          npm run build
+          npm run lint
+      - name: Gateway tests
+        working-directory: services/api-gateway
+        run: |
+          npm ci
+          npm test
+      - name: Spring tests and Python syntax
+        run: |
+          mvn -f services/spring-orchestrator/pom.xml test --batch-mode --no-transfer-progress
+          python -m compileall -q services/ml-engine
+
+  compose-smoke:
+    needs: source-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MONGO_PASSWORD: ci-only-mongo-password
+      JWT_SECRET: ci-only-jwt-secret-for-compose-smoke-testing
+      ALPHAVANTAGE_API_KEY: ci-no-live-market-data
+      FRONTEND_URL: http://127.0.0.1:8088
+      FORECAST_DAILY_LIMIT: '25'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the production stack
+        run: |
+          docker compose -f docker-compose.production.yml config --quiet
+          docker compose -f docker-compose.production.yml build
+          docker compose -f docker-compose.production.yml up -d --wait --wait-timeout 300
+      - name: Exercise service and account integration
+        run: python3 scripts/compose-smoke.py
+      - name: Service state and logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.production.yml ps
+          docker compose -f docker-compose.production.yml logs --tail 80
+      - name: Remove the temporary stack and data
+        if: always()
+        run: docker compose -f docker-compose.production.yml down -v --remove-orphans

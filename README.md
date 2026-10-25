@@ -1,8 +1,8 @@
 # PerBillion
 
-PerBillion is a stock forecasting application built from a React frontend, an Express API gateway, a Spring Boot orchestration service, a Python statsmodels ML engine, MongoDB, and Nginx.
+PerBillion is a free investing education experience built from a React frontend, an Express API gateway, a Spring Boot orchestration service, a Python statsmodels ML engine, MongoDB, and Nginx. The current path has 24 interactive lessons, a growth simulator, synthetic paper trading, and a bounded statistical forecast studio. Accounts are optional.
 
-The current codebase is set up for local and Docker Compose development. Production deployment still requires rotated secrets, environment-specific hardening, monitoring, backups, and infrastructure review.
+The current codebase includes local and production Compose definitions. See [release and operations](docs/RELEASE_AND_OPERATIONS.md) for deployment inputs, cost assumptions, service verification, and rollback. Production deployment still requires rotated secrets, a licensed market-data feed, TLS, monitoring, backups, and infrastructure review. No live host is confirmed.
 
 ## Implemented Forecast Models
 
@@ -102,9 +102,7 @@ npm run dev
 
 ## API Surface
 
-There are 27 active REST handlers in the current source, excluding static file serving and the unused `forecast_backup.ts` file.
-
-API gateway, 16 handlers:
+API gateway:
 
 - `GET /health`
 - `POST /api/auth/register`
@@ -122,6 +120,9 @@ API gateway, 16 handlers:
 - `GET /api/education/progress`
 - `POST /api/education/progress`
 - `GET /api/education/stats`
+- `GET /api/education/v2/progress`
+- `PUT /api/education/v2/progress/:lessonId`
+- `DELETE /api/education/v2/progress`
 
 Spring orchestrator, 6 handlers:
 
@@ -168,6 +169,8 @@ curl -X POST http://localhost/api/forecast/generate \
     "modelType": "auto"
   }'
 ```
+
+`forecastMonths` is retained for API compatibility; `12` means 12 **weekly** periods. The accepted range is 1–52 weeks. Requests are subject to capacity limits.
 
 ## Project Structure
 

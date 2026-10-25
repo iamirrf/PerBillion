@@ -5,7 +5,7 @@ export const OptionsPayoffWidget: React.FC = () => {
   const [strike, setStrike] = useState<number>(100);
   const [premium, setPremium] = useState<number>(5);
   const [upperStrike, setUpperStrike] = useState<number>(110);
-  const [upperPremium, setUpperPremium] = useState<number>(2);
+  const upperPremium = 2;
 
   // Generate price range from 70% of strike to 130% of strike
   const prices: { price: number; pnl: number }[] = [];
@@ -34,9 +34,6 @@ export const OptionsPayoffWidget: React.FC = () => {
   const maxGain = optionType === 'bull_call_spread' 
     ? (upperStrike - strike) - maxLoss 
     : undefined;
-
-  const currentPrice = strike;
-  const currentPnl = prices.find((item) => item.price >= currentPrice)?.pnl || 0;
 
   return (
     <div className="my-8 p-6 bg-gradient-to-br from-gray-900 via-gray-950 to-black border border-cyan-500/30 rounded-2xl shadow-xl text-white">

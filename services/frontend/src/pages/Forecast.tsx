@@ -43,21 +43,20 @@ export default function Forecast() {
   }
 
   useEffect(() => {
+    const loadForecast = async () => {
+      try {
+        const response = await api.get(`/forecasts/${forecastId}`)
+        setForecast(response.data)
+      } catch (error) {
+        console.error('Failed to load forecast:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
     loadForecast()
     const interval = setInterval(loadForecast, 5000) // Poll every 5 seconds
     return () => clearInterval(interval)
   }, [forecastId])
-
-  const loadForecast = async () => {
-    try {
-      const response = await api.get(`/forecasts/${forecastId}`)
-      setForecast(response.data)
-    } catch (error) {
-      console.error('Failed to load forecast:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   if (loading) {
     return <div className="text-center py-12">Loading...</div>

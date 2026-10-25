@@ -19,10 +19,10 @@ const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
 router.post('/register',
   authRateLimiter,
   [
-    body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 8 }),
-    body('fullName').trim().notEmpty(),
-    body('username').optional().trim().isLength({ min: 3, max: 30 }).matches(/^[a-zA-Z0-9_]+$/),
+    body('email').isString().bail().isEmail().isLength({ max: 254 }).normalizeEmail(),
+    body('password').isString().bail().isLength({ min: 8 }).custom((value: string) => Buffer.byteLength(value, 'utf8') <= 72),
+    body('fullName').isString().bail().trim().isLength({ min: 1, max: 100 }),
+    body('username').optional().isString().bail().trim().isLength({ min: 3, max: 30 }).matches(/^[a-zA-Z0-9_]+$/),
   ],
   async (req: Request, res: Response) => {
     try {
@@ -108,8 +108,11 @@ router.post('/register',
         user,
         token,
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Registration error:', error);
+      if (error?.code === 11000) {
+        return res.status(409).json({ error: 'Email or username already registered' });
+      }
       res.status(500).json({ error: 'Registration failed' });
     }
   }
@@ -119,8 +122,8 @@ router.post('/register',
 router.post('/login',
   authRateLimiter,
   [
-    body('email').isEmail().normalizeEmail(),
-    body('password').notEmpty(),
+    body('email').isString().bail().isEmail().isLength({ max: 254 }).normalizeEmail(),
+    body('password').isString().bail().notEmpty().isLength({ max: 1024 }),
   ],
   async (req: Request, res: Response) => {
     try {

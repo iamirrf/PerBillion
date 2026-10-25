@@ -1,13 +1,17 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 
-const API_URL = import.meta.env.VITE_API_URL || '/api'
+// VITE_API_URL may be a same-origin path or the gateway origin. Keep the
+// gateway's /api prefix in both cases so local and container builds agree.
+const configuredUrl = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/+$/, '')
+const API_URL = configuredUrl.endsWith('/api') ? configuredUrl : `${configuredUrl}/api`
 
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 15000,
 })
 
 // Request interceptor to add auth token
@@ -26,9 +30,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isAuthRequest = /\/auth\/(login|register)/.test(error.config?.url || '')
+    if (error.response?.status === 401 && !isAuthRequest && error.config?.headers?.Authorization) {
       useAuthStore.getState().logout()
-      window.location.href = '/login'
     }
     return Promise.reject(error)
   }

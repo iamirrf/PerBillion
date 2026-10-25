@@ -123,7 +123,7 @@ export const LessonContentRenderer: React.FC<LessonContentRendererProps> = ({ co
           const cells = rowText
             .split('|')
             .map((c) => c.trim())
-            .filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+            .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
           if (cells.length > 0) {
             tableRows.push(cells);
           }
