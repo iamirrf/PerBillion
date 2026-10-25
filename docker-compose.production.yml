@@ -49,6 +49,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       MONGODB_URI: ${MONGODB_URI:-mongodb://perbillion:${MONGO_PASSWORD:?Set MONGO_PASSWORD}@mongodb:27017/perbillion?authSource=admin}
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-perbillion}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       JWT_EXPIRY: ${JWT_EXPIRY:-7d}
       FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL to the public origin}
