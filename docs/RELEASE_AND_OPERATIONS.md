@@ -1,6 +1,6 @@
 # PerBillion release and operating model
 
-Updated 2026-10-24. This repository has no confirmed live production host. The commands below prepare and verify a deployment; they do not imply that one has occurred.
+Updated 2026-10-25. The public pilot is deployed at **https://perbillion-705825363504.us-central1.run.app/** in Google Cloud project `perbillion-free-2026`, region `us-central1`. It uses a scale-to-zero Cloud Run service with frontend, gateway, Spring, and Python containers; a private `e2-micro` VM runs MongoDB. The VM has no public IP. All application containers use the same origin.
 
 ## Product boundary
 
@@ -12,52 +12,57 @@ Updated 2026-10-24. This repository has no confirmed live production host. The c
 
 ## Capacity and expected cost
 
-This is a planning estimate for a small, single-host pilot, not a vendor quote or a measured production benchmark. Review prices and terms before purchase.
+The deployment uses services eligible for Google's Always Free allowances, with one Cloud Run instance at most, no minimum instances, a 30 GB standard persistent disk, private VM networking, and five accepted live forecasts per day for the whole deployment. These choices reduce cost but **do not guarantee a zero bill**. Free quotas are shared across projects on the billing account, and public traffic or egress beyond them is billed. Google billing alerts do not automatically stop all usage. Check the project's billing reports regularly and disable public traffic if a strict zero-dollar requirement becomes binding.
 
 | Item | Planning basis | Estimated monthly cost |
 | --- | --- | ---: |
-| App host, MongoDB, Spring, Python model, and gateway | One 4-vCPU, 8-GiB basic virtual machine. [DigitalOcean lists $48/month](https://www.digitalocean.com/pricing/droplets). CPU fit must be load-tested. | $48 |
-| Host snapshot backup | Weekly backup at [20% of VM cost](https://www.digitalocean.com/pricing/droplets). Separately test MongoDB restore and keep an offsite copy. | $9.60 plus offsite storage |
-| Optional separate model host | 2-vCPU, 4-GiB CPU-optimized machine is [listed at $42/month](https://www.digitalocean.com/pricing/droplets). Needed only if measured model load exceeds the pilot host. | $0 or $42 |
-| Optional managed MongoDB | [Atlas dedicated starts around $56.94/month](https://www.mongodb.com/pricing); self-hosting on the pilot VM avoids this line item but shifts backup and maintenance work to the operator. | $0 or $56.94+ |
-| Historical market data | The code requests `TIME_SERIES_WEEKLY_ADJUSTED`. [Alpha Vantage describes 25 calls/day on its standard free plan](https://www.alphavantage.co/premium/), but [its terms require an agreement for commercial use](https://www.alphavantage.co/terms_of_service/). Obtain a written entitlement and quote before public live use. | Vendor quote required |
-| Model inference | Statsmodels runs on our CPU; there is no third-party model token charge. At 25 jobs/day and an assumed 60 CPU-seconds/job, the workload is about 12.5 CPU-hours/month. Measure real wall time, memory, and peak overlap. | Included in host until capacity is exceeded |
+| MongoDB VM and disk | [One `e2-micro` in `us-central1` and 30 GB-months of standard persistent disk are Always Free eligible](https://docs.cloud.google.com/free/docs/free-cloud-features). This is a 1 GB RAM pilot database, with limited capacity. | $0 within the shared allowance |
+| Cloud Run application | [Request-based free tier](https://cloud.google.com/run/pricing) applies to CPU, memory, and requests. Four sidecars share one instance; cold starts and active requests consume the quota. | $0 within the shared allowance; usage beyond it is billed |
+| Private configuration and backups | A private Google Cloud Storage bucket in `us-central1` holds two configuration objects and rolling MongoDB archives. [Cloud Storage's free tier](https://docs.cloud.google.com/free/docs/free-cloud-features) applies if shared storage and operation limits are not exceeded. | $0 within the shared allowance |
+| Container images | Images are published as public packages in GitHub Container Registry, avoiding Google Artifact Registry storage usage. | $0 at this pilot scale |
+| Network egress | Google includes [limited free outbound transfer](https://cloud.google.com/run/pricing); additional public asset traffic is billed. The VM has no external IPv4 address. | Traffic dependent |
+| Historical market data | Alpha Vantage `TIME_SERIES_WEEKLY_ADJUSTED`. The owner confirmed that the key is licensed for public use. The operator must maintain that entitlement. | Per the owner's provider agreement |
+| Model inference | Statsmodels runs in the Python Cloud Run container; no third-party model token fee. Five jobs per day is the current deployment-wide limit. | Cloud Run usage above its free tier is billed |
 
-The **known infrastructure planning floor is about $57.60/month**, excluding domain, TLS edge, offsite backups, monitoring, taxes, and licensed market data. A separate model host would bring that example to about $99.60/month. The product stays free to learners; operators fund these costs. The Spring data fetcher caches a maximum of 100 weekly ticker series for 24 hours per process to reduce provider calls. Each fresh uncached ticker can still use one provider request, and no provider entitlement is assumed from caching.
+The product stays free to learners. The Spring data fetcher caches up to 100 weekly ticker series for 24 hours per process. Each fresh uncached ticker can still use one provider request. The single-instance forecast limit is held in gateway memory and resets on restart; it is a capacity control, not a billing cap.
 
 ## Deployment inputs
 
-1. Copy `.env.production.example` to `.env` on the target host. Set strong `MONGO_PASSWORD` and `JWT_SECRET`, a properly licensed `ALPHAVANTAGE_API_KEY`, `FRONTEND_URL` to the actual public HTTPS origin, and the desired `FORECAST_DAILY_LIMIT`. Keep `.env` out of Git. Set `MONGODB_URI` only if using a separately managed database.
-2. Place a TLS reverse proxy or load balancer in front of local port `PERBILLION_HTTP_PORT` (default `127.0.0.1:8088`). Route the entire origin, including `/api` and `/uploads`, to this port. Configure the edge to pass `X-Forwarded-Proto: https`. Production Compose does not expose MongoDB, Spring, or the Python service publicly. Once the host is known, set the Open Graph and Twitter image URLs in `services/frontend/index.html` to the absolute HTTPS asset URL before building and test an actual link preview; some social crawlers do not execute JavaScript.
-3. Ensure DNS, secrets, log collection, storage, backups, provider license, and a restore-tested MongoDB backup are ready. Set up an image registry or keep the previous image digest for rollback.
+1. Keep the MongoDB password, JWT secret, and licensed Alpha Vantage key outside Git. `scripts/gcp/make-private-config.py` writes the two production env files with mode `0600`. Upload them to the bucket `perbillion-free-2026-private`. Its public access prevention is enabled, and only the Cloud Run service identity has object-viewer access. The backup VM identity has object-creator access.
+2. The VM was created as `perbillion-mongo` in `us-central1-a` with `e2-micro`, 30 GB `pd-standard`, and no external IP. MongoDB 7.0 is installed by `scripts/gcp/install-mongo.sh`, listens on loopback and the private VPC address, uses authentication, and caps WiredTiger cache at 256 MB. Access it through IAP SSH. `scripts/gcp/seed-legacy-lessons.cjs` loads the prior 30 lessons and indexes without clearing existing records.
+3. GitHub Actions publishes the four container images to `ghcr.io/iamirrf` under a `sha-<commit>` tag. After the release checks pass, deploy that exact SHA with `bash scripts/gcp/deploy-cloud-run.sh <commit-sha>`. The script keeps minimum instances at zero, maximum at one, and connects privately to MongoDB with Direct VPC egress.
+4. Cloud Run receives configuration from the private bucket at startup through its service account. The frontend serves `/api` and `/uploads` from the same HTTPS origin. If the public origin changes, regenerate `gateway.env`, update `services/frontend/index.html` social metadata, rebuild the frontend image, and deploy a new revision.
 
 ```bash
-docker compose -f docker-compose.production.yml config
-docker compose -f docker-compose.production.yml build
-docker compose -f docker-compose.production.yml up -d
-docker compose -f docker-compose.production.yml ps
+python3 scripts/gcp/make-private-config.py \
+  --mongo-password-file=/secure/mongo-password \
+  --jwt-secret-file=/secure/jwt-secret \
+  --alpha-env-file=/secure/provider.env \
+  --output-dir=/secure/perbillion-config \
+  --public-origin=https://perbillion-705825363504.us-central1.run.app
+gcloud storage cp /secure/perbillion-config/gateway.env /secure/perbillion-config/spring.env \
+  gs://perbillion-free-2026-private/
+bash scripts/gcp/deploy-cloud-run.sh <tested-commit-sha>
 ```
 
 ## Release checks
 
-Run frontend `npm run build`, API `npm test`, Spring `mvn test`, and Python `python3 -m compileall -q services/ml-engine`. Then verify every service through the production network:
+The GitHub release workflow runs frontend build and lint, gateway tests, Java build, Python syntax, then a disposable production Compose smoke test including MongoDB, Spring, Python, account progress, and profile image persistence after a gateway restart. Locally, use Java 21 for Maven. Verify the live deployment:
 
 ```bash
-curl -fsS http://127.0.0.1:8088/health
-curl -fsS http://127.0.0.1:8088/api/health
-docker compose -f docker-compose.production.yml exec nginx wget -qO- http://spring-orchestrator:8080/actuator/health
-docker compose -f docker-compose.production.yml exec nginx wget -qO- http://ml-engine:5000/health
-docker compose -f docker-compose.production.yml exec mongodb mongosh --quiet -u perbillion -p "$MONGO_PASSWORD" --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 }).ok'
+curl -fsS https://perbillion-705825363504.us-central1.run.app/api/health
+python3 scripts/gcp/live-smoke.py https://perbillion-705825363504.us-central1.run.app
 ```
 
-In a browser on the actual host, complete a guest lesson, refresh, sign in and check merge status, restore on a second device, export, reset only current progress, verify an old-coursework transcript, change growth inputs, reject invalid virtual orders, place valid virtual orders, and exercise forecast pending, completion, error, timeout, and cancellation states. Check desktop and phone widths, keyboard focus, reduced motion, unavailable services, and social preview metadata. A live forecast check requires valid licensed market-data access. Confirm no browser runtime errors or horizontal overflow.
+In a browser on the actual host, complete a guest lesson, refresh, sign in and check merge status, restore on a second device, export, reset only current progress, verify an old-coursework transcript, change growth inputs, reject invalid virtual orders, place valid virtual orders, and exercise forecast pending, completion, error, timeout, and cancellation states. Check desktop and phone widths, keyboard focus, reduced motion, unavailable services, and social preview metadata. A live four-week AAPL forecast completed successfully on 2026-10-25. Confirm no browser runtime errors or horizontal overflow.
 
 ## Monitoring and rollback
 
-- Watch API 5xx/429 rates, forecast completion and duration, model memory/CPU, provider quota errors, MongoDB health, progress-sync errors, and backup jobs. Do not send lesson answers or account tokens to analytics. Measure aggregate lesson starts, completions, and return visits only after choosing a privacy policy and consent approach.
-- If the release fails, disable traffic at the TLS edge, restore the previous image digests or Git release and run `docker compose -f docker-compose.production.yml up -d --build`, then repeat health and smoke checks. Keep MongoDB data intact; the new `education_progress_v2` collection is additive and the legacy collection remains separate. Restore MongoDB from a verified backup only for a data incident, not for a UI rollback.
-- `docker-compose.yml` remains the local development stack. The production file uses built frontend and gateway images, persistent database/cache/upload volumes, and a localhost-only HTTP ingress.
+- Watch Cloud Run 5xx/429 rates, forecast completion and duration, model memory/CPU, provider quota errors, MongoDB health, progress-sync errors, backup jobs, and actual billing. Do not send lesson answers or account tokens to analytics. Measure aggregate lesson starts, completions, and return visits only after choosing a privacy policy and consent approach.
+- The VM's `/usr/local/bin/perbillion-backup` runs daily via cron and writes compressed MongoDB archives to `gs://perbillion-free-2026-private/backups/`. The bucket lifecycle removes backup objects after seven days. Test restore with `mongorestore --dryRun --gzip --archive=<downloaded-archive>`; for a real data incident, restore to a separate database first and inspect it before replacing production data.
+- If an app revision fails, use `gcloud run revisions list --service=perbillion --region=us-central1 --project=perbillion-free-2026` to find the previous healthy revision, then `gcloud run services update-traffic perbillion --to-revisions=<previous-revision>=100 --region=us-central1 --project=perbillion-free-2026`. Repeat health and live smoke checks. Keep MongoDB intact; `education_progress_v2` is additive and legacy progress remains separate. Restore MongoDB only for a data incident, not for a UI rollback.
+- `docker-compose.yml` remains the local development stack. `docker-compose.production.yml` remains a portable single-host production option; it is exercised in CI. The Google deployment uses the same application code in Cloud Run and persistent MongoDB on the free VM.
 
-## Known release gate in this workspace
+## Operating limits
 
-Docker is not installed in the current workspace. Builds and browser tests can run locally, but live MongoDB, Spring, Python, Nginx, licensed market data, and full Compose integration must be verified on a Docker-capable host before calling a public release ready. No production deployment is assumed.
+There is no custom domain attached. The generated `run.app` hostname is the public origin. The deployed single `e2-micro` database is a limited pilot, not a high-availability database. Forecast requests, account data, and profile images depend on that VM and its rolling backups. Raise capacity and add stronger availability only after measuring traffic and approving a paid hosting budget.

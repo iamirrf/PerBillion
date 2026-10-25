@@ -34,3 +34,6 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 FROM production AS cloudrun
 COPY cloudrun-entrypoint.sh /app/cloudrun-entrypoint.sh
 ENTRYPOINT ["/bin/sh", "/app/cloudrun-entrypoint.sh"]
+
+# Preserve the plain runtime image for Compose builds without an explicit target.
+FROM production AS default
