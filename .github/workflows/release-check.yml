@@ -29,12 +29,15 @@ jobs:
         working-directory: services/frontend
         run: |
           npm ci
+          npm audit --omit=dev
+          npm test
           npm run build
           npm run lint
       - name: Gateway tests
         working-directory: services/api-gateway
         run: |
           npm ci
+          npm audit --omit=dev
           npm test
       - name: Spring tests and Python syntax
         run: |

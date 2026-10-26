@@ -13,6 +13,8 @@ import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import educationRoutes from './routes/education';
 import productRoutes from './routes/product';
+import billingRoutes, { stripeWebhook } from './routes/billing';
+import challengeRoutes from './routes/challenges';
 import logger from './utils/logger';
 import { GridFSBucket } from 'mongodb';
 import { getDb } from './utils/db';
@@ -34,6 +36,9 @@ app.use(cors({
 
 // Compression and parsing
 app.use(compression());
+// Stripe signs the exact request bytes. This endpoint must be mounted before
+// JSON parsing and uses its own signature verification instead of browser CSRF.
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json', limit: '1mb' }), stripeWebhook);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -81,6 +86,8 @@ app.use('/api/user', userRoutes);
 app.use('/api/forecast', forecastRoutes);
 app.use('/api/education', educationRoutes);
 app.use('/api/product', productRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/challenges', challengeRoutes);
 
 // Error handling
 app.use(errorHandler);

@@ -16,14 +16,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
-  "exclude": [
-    "src/pages/ForecastDashboard_OLD.tsx",
-    "src/pages/ForecastDashboard_OLD_backup.tsx",
-    "src/pages/ForecastDashboard_Advanced.tsx",
-    "src/pages/ForecastDashboard_simple.tsx",
-    "src/pages/Forecast.tsx",
-    "src/components/ForecastChart.tsx"
-  ],
+  "include": ["src/main.tsx", "src/vite-env.d.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

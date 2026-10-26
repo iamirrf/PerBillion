@@ -3,6 +3,39 @@ import { resolve } from 'node:path'
 
 const origin = 'https://perbillion-705825363504.us-central1.run.app'
 const pages = {
+  learn: {
+    title: 'Investing Academy · PerBillion',
+    description: 'Explore 24 focused investing lessons and three complete free previews.',
+    heading: 'Build judgment, one decision at a time.',
+    copy: 'Follow four learning paths from investing foundations through quantitative research.',
+  },
+  practice: {
+    title: 'Practice investing decisions · PerBillion',
+    description: 'Test investing ideas with fictional assets, virtual cash, and repeatable scenarios.',
+    heading: 'Make the decision. See the consequence.',
+    copy: 'Practice allocation and trading decisions without real money, then review the result.',
+  },
+  research: {
+    title: 'Transparent forecast research · PerBillion',
+    description: 'Explore weekly statistical forecasts, uncertainty, validation, and source provenance.',
+    heading: 'The future is a range, not a line.',
+    copy: 'Use statistical research to learn how model assumptions and uncertainty shape a result.',
+  },
+  pricing: {
+    title: 'Academy membership · PerBillion',
+    description: 'Explore PerBillion Academy membership: 24 lessons, simulated practice, and 12 weekly missions after a seven-day trial.',
+    heading: 'Learn the idea. Practice the decision.',
+    copy: 'Preview three complete lessons, then continue with the full academy for $29 per month after a card-required seven-day trial.',
+  },
+  'learn/money-to-investing': {
+    title: 'Your money, with a future · PerBillion', description: 'A free lesson about saving, investing, trading, goals, and time horizons.', heading: 'Your money, with a future.', copy: 'Separate financial goals by purpose, timing, and capacity for uncertainty.',
+  },
+  'learn/compound-interest': {
+    title: 'The quiet power of compounding · PerBillion', description: 'A free interactive lesson about time, returns, fees, and inflation.', heading: 'The quiet power of compounding.', copy: 'Explore how time changes growth while keeping assumptions visible.',
+  },
+  'learn/diversification': {
+    title: 'Diversification · PerBillion', description: 'A free interactive lesson about concentration and shared portfolio risks.', heading: 'One portfolio. Many possibilities.', copy: 'See how holdings can look different while sharing the same underlying risks.',
+  },
   about: {
     title: 'About PerBillion · Learn, practice, research',
     description: 'Why PerBillion connects investing lessons, fictional market practice, and transparent statistical research.',

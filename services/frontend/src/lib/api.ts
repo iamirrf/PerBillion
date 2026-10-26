@@ -12,15 +12,18 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 15000,
+  withCredentials: true,
 })
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token
+    const csrfToken = useAuthStore.getState().csrfToken
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    if (csrfToken && !['get', 'head', 'options'].includes(String(config.method || 'get').toLowerCase())) config.headers['X-CSRF-Token'] = csrfToken
     return config
   },
   (error) => Promise.reject(error)
@@ -31,9 +34,14 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const isAuthRequest = /\/auth\/(login|register)/.test(error.config?.url || '')
-    if (error.response?.status === 401 && !isAuthRequest && error.config?.headers?.Authorization) {
+    if (error.response?.status === 401 && !isAuthRequest && (error.config?.headers?.Authorization || useAuthStore.getState().user)) {
       try { sessionStorage.setItem('perbillion-session-expired', 'true') } catch { /* Login still opens when storage is unavailable. */ }
       useAuthStore.getState().logout()
+    }
+    if (error.response?.status === 403 && error.response?.data?.code === 'MEMBERSHIP_REQUIRED' && location.pathname !== '/app/billing') {
+      // A full navigation discards any protected lesson or practice data held
+      // in component memory when the server reports that access has expired.
+      location.assign('/app/billing?access=expired')
     }
     return Promise.reject(error)
   }

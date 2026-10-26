@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import api from '../lib/api'
 import { useAuthStore } from '../store/authStore'
-import { lessons } from './curriculum'
+import { lessons } from './curriculumCatalog'
 
 export interface LessonCompletion { score: number; completedAt: string }
 export type SyncStatus = 'local' | 'syncing' | 'synced' | 'offline'
@@ -59,7 +59,7 @@ function merge(a: CompletionMap, b: CompletionMap): CompletionMap {
   }
   return result
 }
-const signedInId = useAuthStore.getState().token ? useAuthStore.getState().user?.id || null : null
+const signedInId = useAuthStore.getState().user?.id || null
 const guest = safeRead(guestKey)
 const first = signedInId ? safeRead(accountKey(signedInId)) : guest
 const starting: Snapshot = signedInId
@@ -113,7 +113,7 @@ export const useLearningStore = create<LearningState>()((set, get) => ({
   },
   synchronize: () => {
     const accountId = get().accountId
-    if (!accountId || !useAuthStore.getState().token) return Promise.resolve()
+    if (!accountId || !useAuthStore.getState().user) return Promise.resolve()
     if (inFlight) return inFlightAccount === accountId ? inFlight : inFlight.then(() => get().synchronize())
     const epoch = get().syncEpoch
     inFlightAccount = accountId

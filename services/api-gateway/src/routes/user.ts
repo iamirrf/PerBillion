@@ -7,7 +7,9 @@ import path from 'path';
 import fs from 'fs';
 import { GridFSBucket } from 'mongodb';
 import { Readable } from 'stream';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import bcrypt from 'bcryptjs';
+import { cancelMembershipForDeletion } from './billing';
 
 const router = Router();
 
@@ -69,6 +71,7 @@ router.get('/profile', async (req: AuthRequest, res: Response) => {
       role: user.role,
       createdAt: user.createdAt,
       lastLogin: user.lastLogin,
+      emailVerified: Boolean(user.emailVerified),
     });
   } catch (error) {
     logger.error('Profile retrieval error:', error);
@@ -251,6 +254,72 @@ router.put('/preferences', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     logger.error('Preferences update error:', error);
     res.status(500).json({ error: 'Failed to update preferences' });
+  }
+});
+
+router.get('/data-export', async (req: AuthRequest, res: Response) => {
+  try {
+    const db = await getDb(), userId = req.user!.id;
+    const [user, preferences, priorProgress, currentProgress, mastery, exercises, practice, watchlist, comparisons, forecasts, challenges] = await Promise.all([
+      db.collection<any>('users').findOne({ _id: userId }, { projection: { passwordHash: 0, verificationTokenHash: 0, resetTokenHash: 0 } }),
+      db.collection('user_preferences').findOne({ userId }),
+      db.collection('education_progress').findOne({ userId }),
+      db.collection('education_progress_v2').find({ userId }).toArray(),
+      db.collection('learning_mastery').find({ userId }).toArray(),
+      db.collection('learning_exercises_v3').find({ userId }).toArray(),
+      db.collection('practice_sessions').find({ userId }).toArray(),
+      db.collection('watchlists').find({ userId }).toArray(),
+      db.collection('research_comparisons').find({ userId }).toArray(),
+      db.collection('forecasts').find({ $or: [{ userId }, { user_id: userId }] }).toArray(),
+      db.collection('challenge_progress').find({ userId }).toArray(),
+    ]);
+    res.setHeader('Content-Disposition', `attachment; filename="perbillion-data-${new Date().toISOString().slice(0, 10)}.json"`);
+    return res.json({ exportedAt: new Date(), user, preferences, learning: { priorProgress, currentProgress, mastery, exercises }, practice, challenges, watchlist, comparisons, forecasts });
+  } catch (error) {
+    logger.error('Account export failed:', error);
+    return res.status(503).json({ error: 'Your data export could not be prepared' });
+  }
+});
+
+router.delete('/account', async (req: AuthRequest, res: Response) => {
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  try {
+    const db = await getDb(), userId = req.user!.id;
+    const user: any = await db.collection<any>('users').findOne({ _id: userId });
+    if (!user || !await bcrypt.compare(password, user.passwordHash)) return res.status(401).json({ error: 'Enter your password to delete the account' });
+    await db.collection('account_deletions').updateOne(
+      { userId },
+      { $set: { state: 'cancelling-membership', updatedAt: new Date() }, $setOnInsert: { userId, requestedAt: new Date() } },
+      { upsert: true },
+    );
+    await cancelMembershipForDeletion(userId);
+    await db.collection('account_deletions').updateOne({ userId }, { $set: { state: 'erasing-data', updatedAt: new Date() } });
+    const collections = ['user_preferences', 'education_progress', 'education_progress_v2', 'education_exercises_v2', 'learning_attempts', 'learning_mastery', 'learning_exercises_v3', 'practice_sessions', 'watchlists', 'research_comparisons', 'challenge_progress', 'forecast_requests', 'auth_sessions'];
+    await Promise.all(collections.map(name => db.collection(name).deleteMany({ userId })));
+    await db.collection('forecasts').deleteMany({ $or: [{ userId }, { user_id: userId }] });
+    if (persistUploadsInMongo && user.profilePicture?.startsWith('/uploads/profiles/')) {
+      const bucket = new GridFSBucket(db, { bucketName: 'profile_images' });
+      const files = await bucket.find({ filename: path.basename(user.profilePicture) }).toArray();
+      await Promise.all(files.map(file => bucket.delete(file._id)));
+    } else if (user.profilePicture?.startsWith('/uploads/profiles/')) {
+      const filename = path.basename(user.profilePicture);
+      const uploadPath = path.join(__dirname, '../../uploads/profiles', filename);
+      if (fs.existsSync(uploadPath)) fs.unlinkSync(uploadPath);
+    }
+    await db.collection('funnel_events').updateMany({ userId }, { $set: { userId: null, accountDeleted: true } });
+    const userIdHash = createHash('sha256').update(userId).digest('hex');
+    await db.collection('account_deletions').updateOne(
+      { userId },
+      { $set: { userIdHash, state: 'ready-to-delete', updatedAt: new Date() }, $unset: { userId: '' } },
+    );
+    await db.collection('billing_accounts').deleteOne({ userId });
+    await db.collection<any>('users').deleteOne({ _id: userId });
+    await db.collection('account_deletions').updateOne({ userIdHash }, { $set: { state: 'complete', completedAt: new Date(), updatedAt: new Date() } });
+    res.append('Set-Cookie', `${process.env.NODE_ENV === 'production' ? '__Host-perbillion_session' : 'perbillion_session'}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+    return res.json({ deleted: true, backupRetentionDays: 7 });
+  } catch (error) {
+    logger.error('Account deletion failed:', error);
+    return res.status(503).json({ error: 'The account could not be deleted' });
   }
 });
 

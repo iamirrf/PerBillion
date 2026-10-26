@@ -1,2 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://perbillion-705825363504.us-central1.run.app/</loc></url><url><loc>https://perbillion-705825363504.us-central1.run.app/about</loc></url><url><loc>https://perbillion-705825363504.us-central1.run.app/privacy</loc></url><url><loc>https://perbillion-705825363504.us-central1.run.app/terms</loc></url></urlset>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/learn</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/learn/money-to-investing</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/learn/compound-interest</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/learn/diversification</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/practice</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/research</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/pricing</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/about</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/privacy</loc></url>
+  <url><loc>https://perbillion-705825363504.us-central1.run.app/terms</loc></url>
+</urlset>

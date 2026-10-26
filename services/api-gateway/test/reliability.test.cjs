@@ -12,7 +12,11 @@ const lesson = { _id: 'lesson-db-id', lessonId: 'beginner-1', level: 'beginner',
 let saved = { ...progress.initialProgress('learner'), _id: 'immutable-mongo-id' };
 let lastUpdate;
 let lastForecast;
+let forecastPostCount = 0;
+const forecastRequests = new Map();
 const collection = {
+  createIndex: async () => 'index',
+  insertOne: async () => ({ insertedId: 'inserted' }),
   find: () => ({ project: () => ({ toArray: async () => [lesson] }) }),
   findOne: async (query) => query.lessonId ? (query.lessonId === lesson.lessonId ? lesson : null) : saved,
   findOneAndUpdate: async () => saved,
@@ -23,8 +27,23 @@ const collection = {
     return { matchedCount: 1 };
   },
 };
-db.getDb = async () => ({ collection: () => collection });
-axios.default.post = async (_url, body) => { lastForecast = body; return { data: { forecastId: 'id', status: 'pending' } }; };
+const forecastRequestCollection = {
+  createIndex: async () => 'index',
+  insertOne: async doc => {
+    const key = `${doc.userId}:${doc.requestId}`;
+    if (forecastRequests.has(key)) throw Object.assign(new Error('duplicate'), { code: 11000 });
+    forecastRequests.set(key, { ...doc });
+    return { insertedId: key };
+  },
+  findOne: async query => forecastRequests.get(`${query.userId}:${query.requestId}`) || null,
+  updateOne: async (query, update) => {
+    const key = `${query.userId}:${query.requestId}`;
+    forecastRequests.set(key, { ...(forecastRequests.get(key) || query), ...(update.$set || {}) });
+    return { matchedCount: 1 };
+  },
+};
+db.getDb = async () => ({ collection: name => name === 'forecast_requests' ? forecastRequestCollection : collection });
+axios.default.post = async (_url, body) => { forecastPostCount += 1; lastForecast = body; return { data: { forecastId: 'id', status: 'pending' } }; };
 const app = express();
 app.use(express.json());
 app.use('/education', require('../dist/routes/education').default);
@@ -41,8 +60,8 @@ before(async () => {
 });
 after(async () => { await new Promise(resolve => server.close(resolve)); });
 
-const request = (path, body, auth = true) => fetch(origin + path, {
-  method: 'POST', headers: auth ? headers : { 'content-type': 'application/json' }, body: JSON.stringify(body),
+const request = (path, body, auth = true, extraHeaders = {}) => fetch(origin + path, {
+  method: 'POST', headers: { ...(auth ? headers : { 'content-type': 'application/json' }), ...extraHeaders }, body: JSON.stringify(body),
 });
 
 test('lesson reads and progress require an authenticated account', async () => {
@@ -101,10 +120,13 @@ test('practice scenario prices are deterministic and scenario-specific', () => {
 test('forecast validates horizon, requires auth, and associates account ownership', async () => {
   assert.equal((await request('/forecast/generate', { ticker: ['AAPL'] })).status, 400);
   assert.equal((await request('/forecast/generate', { ticker: 'AAPL', forecastMonths: 53 })).status, 400);
-  const response = await request('/forecast/generate', { ticker: 'aapl', forecastMonths: 12, modelType: 'auto' });
+  const response = await request('/forecast/generate', { ticker: 'aapl', forecastMonths: 12, modelType: 'auto' }, true, { 'idempotency-key': 'forecast-test-request' });
   assert.equal(response.status, 200);
   assert.equal(lastForecast.userId, 'learner');
   assert.equal(lastForecast.ticker, 'AAPL');
+  const duplicate = await request('/forecast/generate', { ticker: 'aapl', forecastMonths: 12, modelType: 'auto' }, true, { 'idempotency-key': 'forecast-test-request' });
+  assert.equal(duplicate.status, 200);
+  assert.equal(forecastPostCount, 1);
   const guest = await request('/forecast/generate', { ticker: 'MSFT' }, false);
   assert.equal(guest.status, 401);
   assert.equal((await fetch(origin + '/forecast/history?limit=-1', { headers })).status, 400);
@@ -114,6 +136,8 @@ test('auth rejects object credentials and invalid signatures without redirecting
   assert.equal((await request('/auth/register', { email: { $ne: null }, password: 'abcdefgh', fullName: 'Name' }, false)).status, 400);
   const invalid = await fetch(origin + '/education/progress', { headers: { authorization: 'Bearer forged' } });
   assert.equal(invalid.status, 401);
+  const malformedCookie = await fetch(origin + '/education/progress', { headers: { cookie: 'perbillion_session=%E0%A4%A' } });
+  assert.equal(malformedCookie.status, 401);
 });
 
 test('preference updates preserve omitted fields and optional usernames can be cleared', async () => {

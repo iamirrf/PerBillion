@@ -72,6 +72,11 @@ export type UserDoc = {
   createdAt: Date;
   updatedAt: Date;
   lastLogin: Date | null;
+  authVersion?: number;
+  verificationTokenHash?: string;
+  verificationExpiresAt?: Date;
+  resetTokenHash?: string;
+  resetExpiresAt?: Date;
 };
 
 export type UserPreferencesDoc = {
@@ -95,6 +100,7 @@ export function getCollections(database: Db) {
     practiceSessions: database.collection('practice_sessions'),
     watchlists: database.collection('watchlists'),
     researchComparisons: database.collection('research_comparisons'),
+    authSessions: database.collection('auth_sessions'),
   };
 }
 

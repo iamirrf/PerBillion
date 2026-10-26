@@ -104,9 +104,11 @@ class ForecastService:
                 resolved_model_type = self._select_best_model_type(diagnostics, exogenous_data)
                 logger.info(f"Auto-selected model: {resolved_model_type}")
             
-            # Step 4: Update tuner config if advanced settings provided
-            if advanced_config and 'tuning' in advanced_config:
-                self.tuner.config.update(advanced_config['tuning'])
+            # A request-scoped tuner prevents one user's settings leaking into
+            # another request and ensures constructor-derived limits are used.
+            request_tuner = HyperparameterTuner(
+                advanced_config.get('tuning', {}) if advanced_config else {}
+            )
             
             # Step 5: Build and tune model (or use manual params)
             if manual_params:
@@ -116,7 +118,7 @@ class ForecastService:
                 )
             else:
                 model_result = self._build_model(
-                    series, resolved_model_type, diagnostics, exogenous_data, forecast_horizon
+                    series, resolved_model_type, diagnostics, exogenous_data, forecast_horizon, request_tuner
                 )
             
             # Step 6: Generate forecast
@@ -180,8 +182,10 @@ class ForecastService:
     
     def _build_model(self, series: pd.Series, model_type: str, 
                      diagnostics: dict, exogenous_data: list = None,
-                     forecast_horizon: int = 12) -> dict:
+                     forecast_horizon: int = 12,
+                     tuner: HyperparameterTuner = None) -> dict:
         """Build and tune the specified model"""
+        tuner = tuner or self.tuner
         
         seasonal_period = None
         if 'seasonality' in diagnostics and diagnostics['seasonality'].get('detected'):
@@ -189,12 +193,12 @@ class ForecastService:
             seasonal_period = periods[0] if periods else 52  # Default to annual
         
         if model_type == 'ARIMA':
-            return self.tuner.tune_arima(series, seasonal=False)
+            return tuner.tune_arima(series, seasonal=False)
             
         elif model_type == 'SARIMA':
             if seasonal_period is None:
                 raise ValueError("SARIMA requires seasonal data")
-            return self.tuner.tune_arima(series, seasonal=True, seasonal_period=seasonal_period)
+            return tuner.tune_arima(series, seasonal=True, seasonal_period=seasonal_period)
             
         elif model_type == 'SARIMAX':
             if seasonal_period is None:
@@ -203,12 +207,12 @@ class ForecastService:
                 raise ValueError("SARIMAX requires exogenous variables")
             # For SARIMAX, we'd extend the tuning to handle exogenous vars
             # Simplified here - full implementation would tune with exog validation
-            return self.tuner.tune_arima(series, seasonal=True, seasonal_period=seasonal_period)
+            return tuner.tune_arima(series, seasonal=True, seasonal_period=seasonal_period)
             
         elif model_type == 'HOLT_WINTERS_ADDITIVE':
             if seasonal_period is None:
                 raise ValueError("Holt-Winters requires seasonal data")
-            return self.tuner.tune_holt_winters(
+            return tuner.tune_holt_winters(
                 series, seasonal_period, trend_type='add', seasonal_type='add', damped=False
             )
             
@@ -217,14 +221,14 @@ class ForecastService:
                 raise ValueError("Holt-Winters requires seasonal data")
             if (series <= 0).any():
                 raise ValueError("Multiplicative Holt-Winters requires strictly positive data")
-            return self.tuner.tune_holt_winters(
+            return tuner.tune_holt_winters(
                 series, seasonal_period, trend_type='mul', seasonal_type='mul', damped=False
             )
             
         elif model_type == 'HOLT_WINTERS_DAMPED':
             if seasonal_period is None:
                 raise ValueError("Holt-Winters requires seasonal data")
-            return self.tuner.tune_holt_winters(
+            return tuner.tune_holt_winters(
                 series, seasonal_period, trend_type='add', seasonal_type='add', damped=True
             )
         else:

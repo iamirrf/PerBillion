@@ -15,6 +15,13 @@ import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import jakarta.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +31,42 @@ public class ForecastOrchestrationService {
     private final ForecastRepository forecastRepository;
     private final WebClient mlEngineClient;
     private final DataFetchService dataFetchService;
+    private final ExecutorService forecastExecutor = new ThreadPoolExecutor(
+        envInt("FORECAST_WORKERS", 1),
+        envInt("FORECAST_WORKERS", 1),
+        0L,
+        TimeUnit.MILLISECONDS,
+        new ArrayBlockingQueue<>(envInt("FORECAST_QUEUE_SIZE", 8)),
+        runnable -> {
+            Thread worker = new Thread(runnable, "forecast-worker");
+            worker.setDaemon(true);
+            return worker;
+        },
+        new ThreadPoolExecutor.AbortPolicy()
+    );
+
+    private static int envInt(String name, int fallback) {
+        try {
+            return Math.max(1, Integer.parseInt(System.getenv().getOrDefault(name, String.valueOf(fallback))));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    @PostConstruct
+    void recoverInterruptedForecasts() {
+        Instant cutoff = Instant.now().minusSeconds(envInt("FORECAST_STALE_AFTER_SECONDS", 180));
+        List<Forecast> interrupted = forecastRepository.findByStatusInAndCreatedAtBefore(List.of("pending", "running"), cutoff);
+        for (Forecast forecast : interrupted) {
+            forecast.setStatus("failed");
+            forecast.setErrorMessage("Forecast processing was interrupted. Retry from the saved snapshot when available.");
+            forecast.setCompletedAt(Instant.now());
+        }
+        if (!interrupted.isEmpty()) {
+            forecastRepository.saveAll(interrupted);
+            log.warn("Marked {} interrupted forecasts as failed during recovery", interrupted.size());
+        }
+    }
 
     public ForecastResponse createForecast(ForecastRequest request) {
         // Create forecast document
@@ -56,7 +99,17 @@ public class ForecastOrchestrationService {
     }
 
     private void processForecastAsync(String forecastId, ForecastRequest request) {
-        new Thread(() -> processForecast(forecastId, request)).start();
+        try {
+            forecastExecutor.execute(() -> processForecast(forecastId, request));
+        } catch (RejectedExecutionException error) {
+            log.warn("Forecast queue is full; rejecting {}", forecastId);
+            updateForecastStatus(forecastId, "failed", "Forecast capacity is temporarily full. Please retry later.");
+        }
+    }
+
+    @PreDestroy
+    void stopForecastWorkers() {
+        forecastExecutor.shutdownNow();
     }
 
     private void processForecast(String forecastId, ForecastRequest request) {
